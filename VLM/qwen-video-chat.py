@@ -16,8 +16,6 @@ MODEL_PATH = "/root/autodl-tmp/Qwen3-VL-8B-Instruct"
 FRAMES_DIRECTORY = "/root/autodl-tmp/video_frames"
 
 # 历史管理配置
-MAX_HISTORY_TURNS = 5   # 图像较多，减少保留轮数
-MAX_TOKENS = 6144       # 图像占用token多，增加限制
 MAX_FRAMES = 8          # 单次最多处理8帧图像
 
 # 1. 加载模型和处理器
@@ -34,8 +32,7 @@ print("模型加载完成!")
 print("\n正在从固定目录加载图像帧...")
 print(f"目录: {FRAMES_DIRECTORY}")
 
-# 对话历史和图像帧
-conversation_history = []
+# 图像帧列表
 current_frames = []  # 存储当前加载的图像路径列表（按时间顺序）
 
 def load_frames_from_directory(directory_path):
@@ -89,53 +86,16 @@ def show_current_frames():
         print(f"   {i}. {exists} {Path(frame).name}")
         print(f"      路径: {frame}")
 
-def manage_history():
-    """管理对话历史，实现遗忘机制"""
-    global conversation_history
-    
-    # 策略1: 按轮数截断
-    if len(conversation_history) > MAX_HISTORY_TURNS * 2:
-        conversation_history = conversation_history[-(MAX_HISTORY_TURNS * 2):]
-        print(f"💡 提示: 对话历史已超过{MAX_HISTORY_TURNS}轮，自动清理了早期对话\n")
-    
-    # 策略2: 按token数截断（包括图像）
-    total_text = ""
-    image_count = 0
-    for msg in conversation_history:
-        for content in msg["content"]:
-            if content["type"] == "text":
-                total_text += content["text"]
-            elif content["type"] == "image":
-                image_count += 1
-    
-    # 估算：文本token + 图像token（每张图约256 token）
-    estimated_tokens = len(total_text) * 1.5 + image_count * 256
-    
-    while estimated_tokens > MAX_TOKENS and len(conversation_history) > 2:
-        removed = conversation_history[:2]
-        conversation_history = conversation_history[2:]
-        
-        removed_text = ""
-        removed_images = 0
-        for msg in removed:
-            for content in msg["content"]:
-                if content["type"] == "text":
-                    removed_text += content["text"]
-                elif content["type"] == "image":
-                    removed_images += 1
-        
-        estimated_tokens -= (len(removed_text) * 1.5 + removed_images * 256)
-
 def generate_response_with_frames(user_input):
-    """生成带图像帧的模型回复"""
+    """生成带图像帧的模型回复（单次推理，无历史）"""
     if not current_frames:
-        print("⚠️  提示: 当前没有加载图像帧，请先使用 'load <目录>' 命令加载图像")
+        print("⚠️  提示: 当前没有加载图像帧")
         return None
     
-    # 构建用户消息（图像 + 文本）
+    # 构建单次消息（图像 + 文本）
     user_content = []
     
-    # 添加所有图像帧（按时间顺序）
+    # 添加所有图像帧
     for frame_path in current_frames:
         user_content.append({
             "type": "image",
@@ -148,28 +108,44 @@ def generate_response_with_frames(user_input):
         "text": user_input
     })
     
-    # 添加到历史
-    conversation_history.append({
+    # 单次对话消息
+    messages = [{
         "role": "user",
         "content": user_content
-    })
-    
-    # 执行遗忘机制
-    manage_history()
+    }]
     
     try:
         # 处理输入
         text = processor.apply_chat_template(
-            conversation_history,
+            messages,
             tokenize=False,
             add_generation_prompt=True
         )
         
-        # 注意：对于图像输入，需要传递 images 参数
+        # 加载所有图像
+        images = []
+        for frame in current_frames:
+            try:
+                img = Image.open(frame)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                images.append(img)
+            except Exception as e:
+                print(f"⚠️  警告: 无法加载图像 {frame}: {e}")
+        
+        if not images:
+            print("❌ 错误: 没有成功加载任何图像")
+            return None
+        
+        print(f"🔍 调试信息: 加载了 {len(images)} 张图像")
+        for i, img in enumerate(images, 1):
+            print(f"   图像 {i}: 尺寸={img.size}, 模式={img.mode}")
+        
         inputs = processor(
             text=[text],
-            images=[Image.open(frame) for frame in current_frames],
+            images=images,
             return_tensors="pt",
+            padding=True,
         ).to(model.device)
         
         # 生成回复
@@ -193,44 +169,33 @@ def generate_response_with_frames(user_input):
             clean_up_tokenization_spaces=False
         )[0]
         
-        # 添加助手回复到历史
-        conversation_history.append({
-            "role": "assistant",
-            "content": [
-                {"type": "text", "text": output_text}
-            ]
-        })
-        
         return output_text
         
     except Exception as e:
         print(f"❌ 生成回复时出错: {e}")
-        # 移除失败的用户消息
-        if conversation_history and conversation_history[-1]["role"] == "user":
-            conversation_history.pop()
+        import traceback
+        traceback.print_exc()
         return None
 
 def generate_text_only_response(user_input):
-    """生成纯文本回复（不带图像）"""
-    # 添加用户消息到历史
-    conversation_history.append({
+    """生成纯文本回复（单次推理，无历史）"""
+    messages = [{
         "role": "user",
         "content": [
             {"type": "text", "text": user_input}
         ]
-    })
-    
-    manage_history()
+    }]
     
     try:
         text = processor.apply_chat_template(
-            conversation_history,
+            messages,
             tokenize=False,
             add_generation_prompt=True
         )
         inputs = processor(
             text=[text],
             return_tensors="pt",
+            padding=True,
         ).to(model.device)
         
         generated_ids = model.generate(
@@ -252,19 +217,12 @@ def generate_text_only_response(user_input):
             clean_up_tokenization_spaces=False
         )[0]
         
-        conversation_history.append({
-            "role": "assistant",
-            "content": [
-                {"type": "text", "text": output_text}
-            ]
-        })
-        
         return output_text
         
     except Exception as e:
         print(f"❌ 生成回复时出错: {e}")
-        if conversation_history and conversation_history[-1]["role"] == "user":
-            conversation_history.pop()
+        import traceback
+        traceback.print_exc()
         return None
 
 # 启动时自动加载图像帧
@@ -275,9 +233,8 @@ if load_frames_from_directory(FRAMES_DIRECTORY):
     print("📝 命令说明:")
     print("  - 'reload'         : 重新加载图像帧")
     print("  - 'show'           : 显示当前已加载的图像帧")
-    print("  - 'clear'          : 清空对话历史")
-    print("  - 'status'         : 查看状态")
     print("  - 'exit/quit/q'    : 退出程序")
+    print("💡 每次都是独立推理，不保留对话历史")
     print("=" * 70)
     print("\n🤖 助手: 你好！我已经加载了图像序列，可以开始提问了。\n")
 else:
@@ -308,23 +265,6 @@ while True:
         # 显示当前图像帧
         if user_input.lower() == 'show':
             show_current_frames()
-            continue
-        
-        # 清空对话历史
-        if user_input.lower() == 'clear':
-            conversation_history = []
-            print("\n✅ 对话历史已清空！\n")
-            continue
-        
-        # 显示状态
-        if user_input.lower() == 'status':
-            turns = len(conversation_history) // 2
-            print(f"\n📊 当前状态:")
-            print(f"   - 对话轮数: {turns}")
-            print(f"   - 历史消息数: {len(conversation_history)}")
-            print(f"   - 最大保留轮数: {MAX_HISTORY_TURNS}")
-            print(f"   - 已加载图像帧: {len(current_frames)}")
-            print(f"   - 最大帧数: {MAX_FRAMES}\n")
             continue
         
         # 跳过空输入
