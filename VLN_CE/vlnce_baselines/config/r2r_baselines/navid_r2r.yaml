@@ -1,0 +1,28 @@
+# ============================================
+# NaVid R2R 评估配置文件
+# 用于在R2R数据集上评估NaVid模型的导航性能
+# ============================================
+
+# 基础任务配置路径（包含数据集路径、传感器配置等）
+BASE_TASK_CONFIG_PATH: VLN_CE/habitat_extensions/config/vlnce_task_navid_r2r.yaml
+
+EVAL:
+    # 评估任务标识符（用于日志和结果命名）
+    IDENTIFICATION: r2r
+    
+    # 数据集划分：val_unseen（验证集-未见过的环境）
+    # 其他选项: val_seen（见过的环境）、test
+    SPLIT: val_unseen
+    
+    # 早停策略：防止智能体陷入无效行为
+    EARLY_STOP_ROTATION: 25   # 连续旋转超过25次则提前停止（防止原地打转）
+    EARLY_STOP_STEPS: 400     # 单个episode最大步数限制（防止无限循环）
+    
+    # Episode数量控制
+    NUM_EPISODES: 10          # 建议评估的episode数量
+    MAX_EPISODE_COUNT: 10     # 强制限制最大episode数（用于快速测试）
+
+MODEL:
+  # EVA-ViT-G视觉编码器权重路径
+  # 这是预训练的视觉模型，用于提取图像特征
+  VISION_TOWER: /root/autodl-tmp/model_zoo/eva_vit_g.pth

@@ -1,0 +1,53 @@
+# Ignore Python caches
+__pycache__/
+*.py[cod]
+*.so
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Model weights & large artifacts
+model_zoo/*
+!model_zoo/.gitkeep
+
+# Common weight file extensions
+*.pth
+*.pt
+*.ckpt
+*.bin
+*.safetensors
+
+# Logs and results
+logs/
+results/
+*.log
+
+# Analysis results (你的分析程序生成的)
+analysis_results/
+
+# API keys and sensitive config
+api_config.yaml
+llm_api/api_config.yaml
+
+# OS files
+.DS_Store
+Thumbs.db
+._*
