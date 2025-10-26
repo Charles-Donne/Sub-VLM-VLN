@@ -26,6 +26,14 @@ model = AutoModelForImageTextToText.from_pretrained(
     dtype="auto",
 )
 processor = AutoProcessor.from_pretrained(MODEL_PATH)
+
+# 设置图像像素预算（控制单张图像的 token 数量）
+# token 数量范围：256-1280
+processor.image_processor.size = {
+    "longest_edge": 1280*32*32,  # 最大: 1280 tokens
+    "shortest_edge": 256*32*32   # 最小: 256 tokens
+}
+
 print("模型加载完成!")
 
 # 自动加载图像帧
@@ -99,7 +107,10 @@ def generate_response_with_frames(user_input):
     for frame_path in current_frames:
         user_content.append({
             "type": "image",
-            "image": f"file://{frame_path}"
+            "image": f"file://{frame_path}",
+            # 🔥 可选：统一所有图片的像素数（从而统一 token 数）
+            # "min_pixels": 512*512,   # 固定为 512×512 = 262,144 像素 = 1024 tokens
+            # "max_pixels": 512*512,   # 设置相同值强制统一大小
         })
     
     # 添加用户文本
