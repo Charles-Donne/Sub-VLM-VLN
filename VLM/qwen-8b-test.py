@@ -8,10 +8,10 @@ MODEL_PATH = "/root/autodl-tmp/Qwen3-VL-8B-Instruct"
 print("正在加载模型...")
 model = AutoModelForImageTextToText.from_pretrained(
     MODEL_PATH,
-    torch_dtype=torch.bfloat16,  # 使用 bfloat16 节省显存
     device_map="auto",
+    trust_remote_code=True,
 )
-processor = AutoProcessor.from_pretrained(MODEL_PATH)
+processor = AutoProcessor.from_pretrained(MODEL_PATH, trust_remote_code=True)
 print("模型加载完成!")
 
 # 2. 准备输入信息 (纯文本对话测试)
@@ -38,8 +38,11 @@ inputs = processor(
 print("正在生成回复...\n")
 generated_ids = model.generate(
     **inputs,
-    max_new_tokens=512,
-    do_sample=False  # 简单测试使用贪心解码
+    max_new_tokens=256,  # 减少生成长度，避免卡死
+    do_sample=True,      # 使用采样
+    temperature=0.7,     # 添加随机性
+    top_p=0.8,
+    repetition_penalty=1.1  # 防止重复
 )
 
 # 5. 解码输出
