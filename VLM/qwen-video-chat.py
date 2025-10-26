@@ -115,13 +115,6 @@ def generate_response_with_frames(user_input):
     }]
     
     try:
-        # 处理输入
-        text = processor.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
-        )
-        
         # 加载所有图像
         images = []
         for frame in current_frames:
@@ -141,8 +134,19 @@ def generate_response_with_frames(user_input):
         for i, img in enumerate(images, 1):
             print(f"   图像 {i}: 尺寸={img.size}, 模式={img.mode}")
         
+        # 处理输入 - 使用 processor 的正确方式
+        text = processor.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        
+        # 确保 text 是字符串
+        if isinstance(text, list):
+            text = text[0] if text else ""
+        
         inputs = processor(
-            text=[text],
+            text=text,  # 不用列表包装
             images=images,
             return_tensors="pt",
             padding=True,
@@ -192,8 +196,13 @@ def generate_text_only_response(user_input):
             tokenize=False,
             add_generation_prompt=True
         )
+        
+        # 确保 text 是字符串
+        if isinstance(text, list):
+            text = text[0] if text else ""
+        
         inputs = processor(
-            text=[text],
+            text=text,  # 不用列表包装
             return_tensors="pt",
             padding=True,
         ).to(model.device)
