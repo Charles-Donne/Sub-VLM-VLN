@@ -9,9 +9,9 @@ print("正在加载模型...")
 model = AutoModelForImageTextToText.from_pretrained(
     MODEL_PATH,
     device_map="auto",
-    trust_remote_code=True,
+    dtype="auto",
 )
-processor = AutoProcessor.from_pretrained(MODEL_PATH, trust_remote_code=True)
+processor = AutoProcessor.from_pretrained(MODEL_PATH)
 print("模型加载完成!")
 
 # 2. 准备输入信息 (纯文本对话测试)
