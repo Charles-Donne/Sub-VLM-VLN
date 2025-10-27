@@ -6,8 +6,9 @@ import os
 import json
 import cv2
 import numpy as np
-from habitat import Env, Config
+from habitat import Env
 from habitat.utils.visualizations import maps
+from VLN_CE.vlnce_baselines.config.default import get_config
 
 
 class ManualController:
@@ -276,7 +277,7 @@ def run_manual_control(config_path: str, output_dir: str = "./manual_control_out
         print(f"错误：配置文件不存在: {config_path}")
         return
     
-    config = Config.fromfile(config_path)
+    config = get_config(config_path)
     
     # 初始化环境
     print("2. 初始化Habitat环境...")
