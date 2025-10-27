@@ -276,7 +276,7 @@ def run_manual_control(config_path: str, output_dir: str = "./manual_control_out
         print(f"错误：配置文件不存在: {config_path}")
         return
     
-    config = Config(config_path)
+    config = Config.fromfile(config_path)
     
     # 初始化环境
     print("2. 初始化Habitat环境...")
