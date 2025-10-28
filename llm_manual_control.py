@@ -10,18 +10,16 @@ from typing import Dict, List, Tuple, Optional
 from habitat import Env
 from habitat.utils.visualizations import maps
 
-# 添加父目录到路径以导入VLN_CE模块
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from VLN_CE.vlnce_baselines.config.default import get_config
 
-from thinking import LLMPlanner, SubTask
-from observation_collector import ObservationCollector
+from Sub_vlm.thinking import LLMPlanner, SubTask
+from Sub_vlm.observation_collector import ObservationCollector
 
 
 class LLMAssistedController:
     """LLM辅助控制器"""
     
-    def __init__(self, output_dir: str, llm_config_path: str = "llm_config.yaml"):
+    def __init__(self, output_dir: str, llm_config_path: str = "Sub_vlm/llm_config.yaml"):
         """
         初始化
         
@@ -313,11 +311,6 @@ def run_llm_assisted_control(config_path: str,
         print(f"✗ 错误：Habitat配置文件不存在: {config_path}")
         return
     
-    if not os.path.exists(llm_config_path):
-        print(f"✗ 错误：LLM配置文件不存在: {llm_config_path}")
-        print(f"   请从 llm_config.yaml.template 创建配置文件")
-        return
-    
     config = get_config(config_path)
     
     # 初始化环境
@@ -494,6 +487,6 @@ if __name__ == "__main__":
     else:
         habitat_config = sys.argv[1]
         output_dir = sys.argv[2] if len(sys.argv) > 2 else "./llm_control_output"
-        llm_config = sys.argv[3] if len(sys.argv) > 3 else "llm_config.yaml"
+        llm_config = sys.argv[3] if len(sys.argv) > 3 else "./Sub_vlm/llm_config.yaml"
         
         run_llm_assisted_control(habitat_config, output_dir, llm_config)

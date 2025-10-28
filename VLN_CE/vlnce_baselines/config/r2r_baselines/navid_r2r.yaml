@@ -4,7 +4,7 @@
 # ============================================
 
 # 基础任务配置路径（包含数据集路径、传感器配置等）
-BASE_TASK_CONFIG_PATH: VLN_CE/habitat_extensions/config/vlnce_task_enhanced.yaml
+BASE_TASK_CONFIG_PATH: /root/navid_ws/Sub-VLM-VLN/VLN_CE/habitat_extensions/config/vlnce_task_enhanced.yaml
 
 EVAL:
     # 评估任务标识符（用于日志和结果命名）

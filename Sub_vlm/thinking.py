@@ -6,7 +6,7 @@ import json
 import requests
 import base64
 from typing import Dict, List, Tuple, Optional
-from llm_config import LLMConfig
+from Sub_vlm.llm_config import LLMConfig
 
 
 class SubTask:
