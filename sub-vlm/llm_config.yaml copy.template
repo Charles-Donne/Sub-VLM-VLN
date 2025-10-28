@@ -1,0 +1,26 @@
+# LLM API配置模板
+# 请复制此文件为 llm_config.yaml 并填入你的API信息
+
+# OpenRouter API密钥
+# 获取地址: https://openrouter.ai/keys
+api_key: "YOUR_API_KEY_HERE"
+
+# API基础URL
+base_url: "https://openrouter.ai/api/v1"
+
+# 模型名称
+# 推荐模型（支持视觉）:
+#   - anthropic/claude-3-5-sonnet (推荐，强大的视觉理解能力)
+#   - openai/gpt-4-vision-preview
+#   - google/gemini-pro-vision
+model: "anthropic/claude-3-5-sonnet"
+
+# 温度参数 (0.0-1.0)
+# 较低的温度使输出更确定性，较高的温度使输出更多样化
+temperature: 0.7
+
+# 最大token数
+max_tokens: 2000
+
+# 请求超时（秒）
+timeout: 60
