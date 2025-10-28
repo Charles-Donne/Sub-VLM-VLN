@@ -4,14 +4,14 @@
 # ============================================
 
 # 基础任务配置路径（包含数据集路径、传感器配置等）
-BASE_TASK_CONFIG_PATH: VLN_CE/habitat_extensions/config/vlnce_task_navid_r2r.yaml
+BASE_TASK_CONFIG_PATH: VLN_CE/habitat_extensions/config/vlnce_task_enhanced.yaml
 
 EVAL:
     # 评估任务标识符（用于日志和结果命名）
     IDENTIFICATION: r2r
     
     # 数据集划分：val_unseen（验证集-未见过的环境）
-    # 其他选项: val_seen（见过的环境）、test
+    # 其他选项: val_seen（见过的环境）、test  
     SPLIT: val_unseen
     
     # 早停策略：防止智能体陷入无效行为
