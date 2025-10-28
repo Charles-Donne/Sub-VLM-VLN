@@ -1,0 +1,130 @@
+# 8视角配置文件
+# 包含8个方向的RGB相机，每45度一个
+# 前(0°)、右前(45°)、右(90°)、右后(135°)、后(180°)、左后(225°)、左(270°)、左前(315°)
+
+ENVIRONMENT:
+  MAX_EPISODE_STEPS: 500
+
+SIMULATOR:
+  ACTION_SPACE_CONFIG: v0
+  AGENT_0:
+    SENSORS: [
+      RGB_SENSOR,           # 前
+      RGB_FRONT_RIGHT_SENSOR,  # 右前
+      RGB_RIGHT_SENSOR,     # 右
+      RGB_BACK_RIGHT_SENSOR,   # 右后
+      RGB_BACK_SENSOR,      # 后
+      RGB_BACK_LEFT_SENSOR,    # 左后
+      RGB_LEFT_SENSOR,      # 左
+      RGB_FRONT_LEFT_SENSOR    # 左前
+    ]
+  FORWARD_STEP_SIZE: 0.25
+  TURN_ANGLE: 30
+  HABITAT_SIM_V0:
+    GPU_DEVICE_ID: 0
+    ALLOW_SLIDING: True
+  
+  # 前视相机 - 0度
+  RGB_SENSOR:
+    WIDTH: 640
+    HEIGHT: 480
+    HFOV: 90
+    TYPE: HabitatSimRGBSensor
+    POSITION: [0, 1.25, 0]
+    ORIENTATION: [0, 0, 0]
+  
+  # 右前视相机 - 45度
+  RGB_FRONT_RIGHT_SENSOR:
+    WIDTH: 640
+    HEIGHT: 480
+    HFOV: 90
+    TYPE: HabitatSimRGBSensor
+    POSITION: [0, 1.25, 0]
+    ORIENTATION: [0, -0.7854, 0]  # -45度 = -π/4 弧度
+  
+  # 右视相机 - 90度
+  RGB_RIGHT_SENSOR:
+    WIDTH: 640
+    HEIGHT: 480
+    HFOV: 90
+    TYPE: HabitatSimRGBSensor
+    POSITION: [0, 1.25, 0]
+    ORIENTATION: [0, -1.5708, 0]  # -90度 = -π/2 弧度
+  
+  # 右后视相机 - 135度
+  RGB_BACK_RIGHT_SENSOR:
+    WIDTH: 640
+    HEIGHT: 480
+    HFOV: 90
+    TYPE: HabitatSimRGBSensor
+    POSITION: [0, 1.25, 0]
+    ORIENTATION: [0, -2.3562, 0]  # -135度 = -3π/4 弧度
+  
+  # 后视相机 - 180度
+  RGB_BACK_SENSOR:
+    WIDTH: 640
+    HEIGHT: 480
+    HFOV: 90
+    TYPE: HabitatSimRGBSensor
+    POSITION: [0, 1.25, 0]
+    ORIENTATION: [0, 3.14159, 0]  # 180度 = π 弧度
+  
+  # 左后视相机 - 225度
+  RGB_BACK_LEFT_SENSOR:
+    WIDTH: 640
+    HEIGHT: 480
+    HFOV: 90
+    TYPE: HabitatSimRGBSensor
+    POSITION: [0, 1.25, 0]
+    ORIENTATION: [0, 2.3562, 0]  # 135度 = 3π/4 弧度（或-225度）
+  
+  # 左视相机 - 270度
+  RGB_LEFT_SENSOR:
+    WIDTH: 640
+    HEIGHT: 480
+    HFOV: 90
+    TYPE: HabitatSimRGBSensor
+    POSITION: [0, 1.25, 0]
+    ORIENTATION: [0, 1.5708, 0]  # 90度 = π/2 弧度
+  
+  # 左前视相机 - 315度
+  RGB_FRONT_LEFT_SENSOR:
+    WIDTH: 640
+    HEIGHT: 480
+    HFOV: 90
+    TYPE: HabitatSimRGBSensor
+    POSITION: [0, 1.25, 0]
+    ORIENTATION: [0, 0.7854, 0]  # 45度 = π/4 弧度
+
+TASK:
+  TYPE: VLN-v0
+  SUCCESS_DISTANCE: 3.0
+  SENSORS: [
+    INSTRUCTION_SENSOR,
+    SHORTEST_PATH_SENSOR,
+    VLN_ORACLE_PROGRESS_SENSOR
+  ]
+  INSTRUCTION_SENSOR_UUID: instruction
+  POSSIBLE_ACTIONS: [STOP, MOVE_FORWARD, TURN_LEFT, TURN_RIGHT]
+  MEASUREMENTS: [
+    TOP_DOWN_MAP_VLNCE,
+    DISTANCE_TO_GOAL,
+    SUCCESS,
+    SPL,
+    NDTW,
+    PATH_LENGTH,
+    ORACLE_SUCCESS,
+    STEPS_TAKEN
+  ]
+  SUCCESS:
+    SUCCESS_DISTANCE: 3.0
+  SPL:
+    SUCCESS_DISTANCE: 3.0
+  NDTW:
+    GT_PATH: /root/autodl-tmp/data/datasets/R2R_VLNCE_v1-3_preprocessed/{split}/{split}_gt.json.gz
+
+DATASET:
+  TYPE: VLN-CE-v1
+  SPLIT: val_unseen
+  DATA_PATH: /root/autodl-tmp/data/datasets/R2R_VLNCE_v1-3_preprocessed/{split}/{split}.json.gz
+  SCENES_DIR: /root/autodl-tmp/data/scene_datasets

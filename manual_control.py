@@ -1,6 +1,6 @@
 """
 Habitat环境人工控制程序
-纯手动控制，每步保存观测和地图，方便人工决策
+纯手动控制，每步保存观测和地图
 """
 import os
 import json
@@ -64,13 +64,26 @@ class ManualController:
             observations: 环境观测
             info: 环境信息
         """
+        # 获取前视RGB图像（主视角）
         rgb = observations["rgb"]
         instruction = observations["instruction"]["text"]
         distance = info.get("distance_to_goal", -1)
         
-        # 1. 保存RGB图像
+        # 1. 保存前视RGB图像
         rgb_path = os.path.join(self.rgb_dir, f"step_{self.step_count:04d}.jpg")
         cv2.imwrite(rgb_path, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+        
+        # 检查并保存其他视角（如果存在）
+        # 观测中可能包含：rgb, rgb_left, rgb_right, rgb_back, depth等
+        multi_view_images = {}
+        for key in observations.keys():
+            if key.startswith('rgb') and key != 'rgb':
+                # 保存额外视角
+                view_name = key.replace('rgb_', '')  # 如 rgb_left -> left
+                view_path = os.path.join(self.rgb_dir, f"step_{self.step_count:04d}_{view_name}.jpg")
+                cv2.imwrite(view_path, cv2.cvtColor(observations[key], cv2.COLOR_RGB2BGR))
+                multi_view_images[view_name] = observations[key]
+                print(f"  - RGB ({view_name}): {view_path}")
         
         # 2. 生成并保存地图
         top_down_map = maps.colorize_draw_agent_and_fit_to_height(
@@ -81,28 +94,34 @@ class ManualController:
         cv2.imwrite(map_path, cv2.cvtColor(top_down_map, cv2.COLOR_RGB2BGR))
         
         # 3. 生成并保存组合图（左：RGB，右：地图，底部：文本信息）
-        combined = self._create_combined_view(rgb, top_down_map, instruction, distance)
+        combined = self._create_combined_view(rgb, top_down_map, instruction, distance, multi_view_images)
         combined_path = os.path.join(self.combined_dir, f"step_{self.step_count:04d}.jpg")
         cv2.imwrite(combined_path, cv2.cvtColor(combined, cv2.COLOR_RGB2BGR))
         
         print(f"✓ 已保存观测 (Step {self.step_count})")
-        print(f"  - RGB: {rgb_path}")
+        print(f"  - RGB (前): {rgb_path}")
         print(f"  - 地图: {map_path}")
         print(f"  - 组合: {combined_path}")
     
-    def _create_combined_view(self, rgb, top_down_map, instruction, distance):
+    def _create_combined_view(self, rgb, top_down_map, instruction, distance, multi_view_images=None):
         """
-        创建组合视图（RGB + 地图 + 文本）
+        创建组合视图（RGB + 地图 + 文本，如果有多视角则也显示）
         
         Args:
-            rgb: RGB图像
+            rgb: 前视RGB图像
             top_down_map: 俯视图
             instruction: 指令文本
             distance: 到目标距离
+            multi_view_images: 其他视角图像字典 {view_name: image}
             
         Returns:
             组合图像
         """
+        # 如果有多视角，创建更复杂的布局
+        if multi_view_images and len(multi_view_images) > 0:
+            return self._create_multi_view_combined(rgb, top_down_map, instruction, distance, multi_view_images)
+        
+        # 原来的单视角布局
         # 左右拼接RGB和地图
         combined = np.concatenate((rgb, top_down_map), axis=1)
         
@@ -145,6 +164,154 @@ class ManualController:
         
         return final_img
     
+    def _create_multi_view_combined(self, rgb_front, top_down_map, instruction, distance, multi_view_images):
+        """
+        创建多视角组合视图
+        
+        布局（8视角）：
+        ┌────────┬────────┬────────┬────────┐
+        │ L-Front│ Front  │R-Front │ Right  │  ← 第一行
+        ├────────┼────────┼────────┼────────┤
+        │  Left  │  Map   │R-Back  │  Back  │  ← 第二行
+        ├────────┴────────┴────────┴────────┤
+        │       Instruction + Info          │  ← 第三行
+        └───────────────────────────────────┘
+        
+        Args:
+            rgb_front: 前视图像
+            top_down_map: 俯视图
+            instruction: 指令
+            distance: 距离
+            multi_view_images: 其他视角图像
+            
+        Returns:
+            组合图像
+        """
+        h, w = rgb_front.shape[:2]
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        
+        # 定义8个方向的显示顺序（按直觉排列）
+        # 第一行：左前、前、右前、右
+        # 第二行：左、地图、右后、后
+        view_mapping = {
+            'front_left': ('L-Front', (0, 0)),    # 左前 → 第一行第一列
+            'front': ('Front', (0, 1)),           # 前 → 第一行第二列
+            'front_right': ('R-Front', (0, 2)),   # 右前 → 第一行第三列
+            'right': ('Right', (0, 3)),           # 右 → 第一行第四列
+            'left': ('Left', (1, 0)),             # 左 → 第二行第一列
+            # (1, 1) 留给地图
+            'back_right': ('R-Back', (1, 2)),     # 右后 → 第二行第三列
+            'back': ('Back', (1, 3)),             # 后 → 第二行第四列
+            'back_left': ('L-Back', (1, 4))       # 左后 → 备用位置（如果需要）
+        }
+        
+        # 创建2行4列的网格
+        grid = [[None for _ in range(4)] for _ in range(2)]
+        
+        # 放置前视图
+        grid[0][1] = ('Front', rgb_front)
+        
+        # 放置其他视角
+        for key, img in multi_view_images.items():
+            if key in view_mapping:
+                label, (row, col) = view_mapping[key]
+                if col < 4:  # 确保在网格内
+                    grid[row][col] = (label, img)
+        # 放置其他视角
+        for key, img in multi_view_images.items():
+            if key in view_mapping:
+                label, (row, col) = view_mapping[key]
+                if col < 4:  # 确保在网格内
+                    grid[row][col] = (label, img)
+        
+        # 调整地图大小并放在第二行第二列
+        map_resized = cv2.resize(top_down_map, (w, h))
+        grid[1][1] = ('Map', map_resized)
+        
+        # 填充空位（黑色背景）
+        for row in range(2):
+            for col in range(4):
+                if grid[row][col] is None:
+                    empty_img = np.zeros((h, w, 3), dtype=np.uint8)
+                    grid[row][col] = ('', empty_img)
+        
+        # 拼接第一行
+        row1_images = [grid[0][col][1] for col in range(4)]
+        row1 = np.concatenate(row1_images, axis=1)
+        
+        # 在第一行图像上添加标签
+        x_offset = 0
+        for col in range(4):
+            label = grid[0][col][0]
+            if label:
+                # 添加半透明背景
+                overlay = row1.copy()
+                cv2.rectangle(overlay, (x_offset, 0), (x_offset + 150, 35), (0, 0, 0), -1)
+                cv2.addWeighted(overlay, 0.6, row1, 0.4, 0, row1)
+                # 添加文字
+                cv2.putText(row1, label, (x_offset + 10, 25), 
+                           font, 0.7, (255, 255, 255), 2)
+            x_offset += w
+        
+        # 拼接第二行
+        row2_images = [grid[1][col][1] for col in range(4)]
+        row2 = np.concatenate(row2_images, axis=1)
+        
+        # 在第二行图像上添加标签
+        x_offset = 0
+        for col in range(4):
+            label = grid[1][col][0]
+            if label:
+                overlay = row2.copy()
+                cv2.rectangle(overlay, (x_offset, 0), (x_offset + 150, 35), (0, 0, 0), -1)
+                cv2.addWeighted(overlay, 0.6, row2, 0.4, 0, row2)
+                cv2.putText(row2, label, (x_offset + 10, 25), 
+                           font, 0.7, (255, 255, 255), 2)
+            x_offset += w
+        
+        # 上下拼接两行
+        combined = np.vstack([row1, row2])
+        
+        # 第三行：文本信息
+        text_height = 120
+        final_h, final_w = combined.shape[:2]
+        final_img = np.zeros((final_h + text_height, final_w, 3), dtype=np.uint8)
+        final_img.fill(255)
+        final_img[:final_h, :] = combined
+        
+        # 添加文本信息
+        y_pos = final_h + 20
+        
+        # 计算实际的视角数量
+        view_count = 1 + len(multi_view_images)  # 前视 + 其他视角
+        
+        # Step和距离
+        cv2.putText(final_img, f"Step: {self.step_count}", (10, y_pos), 
+                   font, 0.6, (0, 0, 0), 1)
+        cv2.putText(final_img, f"Distance: {distance:.2f}m", (200, y_pos), 
+                   font, 0.6, (0, 0, 255), 2)
+        cv2.putText(final_img, f"Views: {view_count}", (450, y_pos), 
+                   font, 0.6, (0, 128, 0), 1)
+        
+        # 指令（可能换行）
+        y_pos += 25
+        max_width = final_w - 20
+        words = instruction.split()
+        line = ""
+        for word in words:
+            test_line = f"{line} {word}" if line else word
+            (text_width, _), _ = cv2.getTextSize(test_line, font, 0.5, 1)
+            if text_width > max_width:
+                cv2.putText(final_img, line, (10, y_pos), font, 0.5, (0, 0, 0), 1)
+                line = word
+                y_pos += 20
+            else:
+                line = test_line
+        if line:
+            cv2.putText(final_img, line, (10, y_pos), font, 0.5, (0, 0, 0), 1)
+        
+        return final_img
+    
     def save_step_info(self, action_name, action_id, info):
         """
         保存当前步骤的详细信息（JSON）
@@ -160,10 +327,8 @@ class ManualController:
                 "name": action_name,
                 "id": action_id
             },
-            "metrics": {
-                "distance_to_goal": info.get("distance_to_goal", -1),
-                "path_length": info.get("path_length", 0)
-            }
+            "distance_to_goal": info.get("distance_to_goal", -1),
+            "path_length": info.get("path_length", 0)
         }
         
         info_path = os.path.join(self.episode_dir, f"step_{self.step_count:04d}_info.json")
@@ -280,13 +445,34 @@ def run_manual_control(config_path: str, output_dir: str = "./manual_control_out
     config = get_config(config_path)
     
     # 初始化环境
-    print("2. 初始化Habitat环境...")
+    print("\n2. 初始化Habitat环境...")
+    print("   提示: 可能会看到EGL相关警告，这是正常的，请耐心等待...")
     try:
         env = Env(config.TASK_CONFIG)
         print(f"   ✓ 环境初始化成功")
         print(f"   - 可用Episodes: {len(env.episodes)}")
+        
+        # 验证环境是否可用
+        if len(env.episodes) == 0:
+            print("   ⚠️  警告: 没有找到任何episodes，请检查数据集路径")
+            print(f"   数据路径: {config.TASK_CONFIG.DATASET.DATA_PATH}")
+            return
+            
+    except KeyError as e:
+        print(f"   ✗ 配置错误: 缺少必要的配置项 {e}")
+        print("   请检查配置文件是否包含 TASK_CONFIG.DATASET 相关配置")
+        import traceback
+        traceback.print_exc()
+        return
+    except FileNotFoundError as e:
+        print(f"   ✗ 文件未找到: {e}")
+        print("   请检查数据集路径和场景文件是否存在")
+        import traceback
+        traceback.print_exc()
+        return
     except Exception as e:
         print(f"   ✗ 环境初始化失败: {e}")
+        print(f"   错误类型: {type(e).__name__}")
         import traceback
         traceback.print_exc()
         return
@@ -294,22 +480,28 @@ def run_manual_control(config_path: str, output_dir: str = "./manual_control_out
     # 初始化控制器
     controller = ManualController(output_dir)
     
-    # 动作字典
+    # 获取配置的动作参数
+    forward_step_size = config.TASK_CONFIG.SIMULATOR.FORWARD_STEP_SIZE
+    turn_angle = config.TASK_CONFIG.SIMULATOR.TURN_ANGLE
+    
+    # 动作字典（显示实际参数）
     action_dict = {
-        "0": ("STOP (停止)", 0),
-        "1": ("MOVE_FORWARD (前进 0.25m)", 1),
-        "2": ("TURN_LEFT (左转 30度)", 2),
-        "3": ("TURN_RIGHT (右转 30度)", 3)
+        "0": (f"STOP", 0),
+        "1": (f"MOVE_FORWARD ({forward_step_size}m)", 1),
+        "2": (f"TURN_LEFT ({turn_angle}°)", 2),
+        "3": (f"TURN_RIGHT ({turn_angle}°)", 3)
     }
     
-    # 所有episode的结果
-    all_results = []
+    print(f"\n动作参数:")
+    print(f"  - 前进步长: {forward_step_size}m")
+    print(f"  - 转向角度: {turn_angle}°")
     
     print(f"\n3. Episode管理")
     print(f"   总数: {len(env.episodes)}")
+    print(f"   ID范围: {env.episodes[0].episode_id} ~ {env.episodes[-1].episode_id}")
     
     # 主循环
-    episode_index = 0  # 当前episode索引
+    episode_index = 0
     
     while True:
         # 让用户选择episode
@@ -414,7 +606,6 @@ def run_manual_control(config_path: str, output_dir: str = "./manual_control_out
                 "oracle_success": final_metrics.get("oracle_success", 0)
             }
         }
-        all_results.append(result)
         
         # 显示结果
         print(f"\n{'='*80}")
@@ -440,34 +631,6 @@ def run_manual_control(config_path: str, output_dir: str = "./manual_control_out
         
         # Episode完成，回到选择菜单
         input("\n按回车键继续...")
-    
-    # 保存总体汇总
-    if all_results:
-        print(f"\n{'='*80}")
-        print("总体评估汇总")
-        print(f"{'='*80}")
-        
-        summary = {
-            "total_episodes": len(all_results),
-            "episodes": all_results,
-            "average_metrics": {
-                "avg_distance_to_goal": np.mean([r["final_metrics"]["distance_to_goal"] for r in all_results]),
-                "avg_success_rate": np.mean([r["final_metrics"]["success"] for r in all_results]),
-                "avg_spl": np.mean([r["final_metrics"]["spl"] for r in all_results]),
-                "avg_path_length": np.mean([r["final_metrics"]["path_length"] for r in all_results])
-            }
-        }
-        
-        summary_path = os.path.join(output_dir, "overall_summary.json")
-        with open(summary_path, "w", encoding="utf-8") as f:
-            json.dump(summary, f, indent=4, ensure_ascii=False)
-        
-        print(f"\n完成Episodes数: {summary['total_episodes']}")
-        print(f"平均最终距离: {summary['average_metrics']['avg_distance_to_goal']:.2f}m")
-        print(f"平均成功率: {summary['average_metrics']['avg_success_rate']:.2%}")
-        print(f"平均SPL: {summary['average_metrics']['avg_spl']:.4f}")
-        print(f"平均路径长度: {summary['average_metrics']['avg_path_length']:.2f}m")
-        print(f"\n总体汇总已保存: {summary_path}")
     
     print(f"\n✓ 所有结果保存在: {output_dir}")
 
