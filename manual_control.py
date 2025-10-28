@@ -7,7 +7,6 @@ import json
 import cv2
 import numpy as np
 from habitat import Env
-from habitat.datasets import make_dataset
 from habitat.utils.visualizations import maps
 from VLN_CE.vlnce_baselines.config.default import get_config
 
@@ -445,32 +444,11 @@ def run_manual_control(config_path: str, output_dir: str = "./manual_control_out
     
     config = get_config(config_path)
     
-    # 创建数据集（和run.py保持一致）
-    print("\n2. 创建数据集...")
-    try:
-        dataset = make_dataset(
-            id_dataset=config.TASK_CONFIG.DATASET.TYPE,
-            config=config.TASK_CONFIG.DATASET
-        )
-        print(f"   ✓ 数据集创建成功")
-        print(f"   - 数据集类型: {config.TASK_CONFIG.DATASET.TYPE}")
-        print(f"   - Episodes总数: {len(dataset.episodes)}")
-        
-        # 按episode ID排序（与run.py保持一致）
-        dataset.episodes.sort(key=lambda ep: ep.episode_id)
-        print(f"   ✓ Episodes已按ID排序")
-        
-    except Exception as e:
-        print(f"   ✗ 数据集创建失败: {e}")
-        import traceback
-        traceback.print_exc()
-        return
-    
-    # 初始化环境（传入dataset）
-    print("\n3. 初始化Habitat环境...")
+    # 初始化环境
+    print("\n2. 初始化Habitat环境...")
     print("   提示: 可能会看到EGL相关警告，这是正常的，请耐心等待...")
     try:
-        env = Env(config.TASK_CONFIG, dataset)
+        env = Env(config.TASK_CONFIG)
         print(f"   ✓ 环境初始化成功")
         print(f"   - 可用Episodes: {len(env.episodes)}")
         
@@ -518,7 +496,7 @@ def run_manual_control(config_path: str, output_dir: str = "./manual_control_out
     print(f"  - 前进步长: {forward_step_size}m")
     print(f"  - 转向角度: {turn_angle}°")
     
-    print(f"\n4. Episode管理")
+    print(f"\n3. Episode管理")
     print(f"   总数: {len(env.episodes)}")
     print(f"   ID范围: {env.episodes[0].episode_id} ~ {env.episodes[-1].episode_id}")
     

@@ -44,8 +44,9 @@ TASK:
     SUCCESS_DISTANCE: 3.0
   NDTW:
     GT_PATH: /root/autodl-tmp/data/datasets/R2R_VLNCE_v1-3_preprocessed/{split}/{split}_gt.json.gz
-  DATASET:
-    TYPE: VLN-CE-v1
-    SPLIT: val_unseen
-    DATA_PATH: /root/autodl-tmp/data/datasets/R2R_VLNCE_v1-3_preprocessed/{split}/{split}.json.gz
-    SCENES_DIR: /root/autodl-tmp/data/scene_datasets
+
+DATASET:
+  TYPE: VLN-CE-v1
+  SPLIT: val_unseen
+  DATA_PATH: /root/autodl-tmp/data/datasets/R2R_VLNCE_v1-3_preprocessed/{split}/{split}.json.gz
+  SCENES_DIR: /root/autodl-tmp/data/scene_datasets
