@@ -35,6 +35,7 @@ SIMULATOR:
     POSITION: [0, 1.25, 0]
     ORIENTATION: [0, 0, 0]
     TYPE: HabitatSimRGBSensor
+    UUID: rgb
   
   # 右前相机 - 45度右转（-45度）
   RGB_FRONT_RIGHT_SENSOR:
@@ -44,6 +45,7 @@ SIMULATOR:
     POSITION: [0, 1.25, 0]
     ORIENTATION: [0, -0.7854, 0]  # -45度 = -π/4
     TYPE: HabitatSimRGBSensor
+    UUID: rgb_front_right
   
   # 右侧相机 - 90度右转（-90度）
   RGB_RIGHT_SENSOR:
@@ -53,6 +55,7 @@ SIMULATOR:
     POSITION: [0, 1.25, 0]
     ORIENTATION: [0, -1.5708, 0]  # -90度 = -π/2
     TYPE: HabitatSimRGBSensor
+    UUID: rgb_right
   
   # 右后相机 - 135度右转（-135度）
   RGB_BACK_RIGHT_SENSOR:
@@ -62,6 +65,7 @@ SIMULATOR:
     POSITION: [0, 1.25, 0]
     ORIENTATION: [0, -2.3562, 0]  # -135度 = -3π/4
     TYPE: HabitatSimRGBSensor
+    UUID: rgb_back_right
   
   # 后视相机 - 180度
   RGB_BACK_SENSOR:
@@ -71,6 +75,7 @@ SIMULATOR:
     POSITION: [0, 1.25, 0]
     ORIENTATION: [0, 3.1416, 0]  # 180度 = π
     TYPE: HabitatSimRGBSensor
+    UUID: rgb_back
   
   # 左后相机 - 135度左转（135度）
   RGB_BACK_LEFT_SENSOR:
@@ -80,6 +85,7 @@ SIMULATOR:
     POSITION: [0, 1.25, 0]
     ORIENTATION: [0, 2.3562, 0]  # 135度 = 3π/4
     TYPE: HabitatSimRGBSensor
+    UUID: rgb_back_left
   
   # 左侧相机 - 90度左转（90度）
   RGB_LEFT_SENSOR:
@@ -89,6 +95,7 @@ SIMULATOR:
     POSITION: [0, 1.25, 0]
     ORIENTATION: [0, 1.5708, 0]  # 90度 = π/2
     TYPE: HabitatSimRGBSensor
+    UUID: rgb_left
   
   # 左前相机 - 45度左转（45度）
   RGB_FRONT_LEFT_SENSOR:
@@ -98,6 +105,7 @@ SIMULATOR:
     POSITION: [0, 1.25, 0]
     ORIENTATION: [0, 0.7854, 0]  # 45度 = π/4
     TYPE: HabitatSimRGBSensor
+    UUID: rgb_front_left
 
 TASK:
   TYPE: VLN-v0
