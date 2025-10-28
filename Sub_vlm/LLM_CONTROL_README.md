@@ -153,24 +153,55 @@ class LLMAssistedController:
 pip install pyyaml requests opencv-python numpy
 ```
 
+或使用配置向导自动安装：
+```bash
+bash setup_llm_control.sh
+```
+
 ### 2. 配置LLM API
+
+**方式1：使用配置向导（推荐）**
+
+```bash
+# 运行交互式配置向导
+bash setup_llm_control.sh
+```
+
+向导会引导你：
+- 输入 OpenRouter API 密钥
+- 选择 LLM 模型
+- 检查并安装依赖包
+- 验证配置
+
+**方式2：手动配置**
 
 ```bash
 # 复制配置模板
-cp llm_config.yaml.template llm_config.yaml
+cp "llm_config.yaml copy.template" llm_config.yaml
 
-# 编辑配置文件，填入API密钥
+# 编辑配置文件
 vim llm_config.yaml
 ```
 
-配置示例：
+新配置格式（支持更多选项）：
 ```yaml
-api_key: "sk-or-v1-xxxxx"  # 你的OpenRouter API密钥
-base_url: "https://openrouter.ai/api/v1"
-model: "anthropic/claude-3-5-sonnet"  # 推荐模型
-temperature: 0.7
-max_tokens: 2000
-timeout: 60
+openrouter:
+  api_key: "sk-or-v1-xxxxx"              # 你的OpenRouter API密钥
+  base_url: "https://openrouter.ai/api/v1"
+  default_model: "anthropic/claude-3-5-sonnet"
+  temperature: 0.7
+  max_tokens: 2000
+  timeout: 60
+
+navigation:
+  observation:
+    enable_8_directions: true            # 启用8方向观察
+    save_compass_view: true              # 保存罗盘视图
+  subtask:
+    auto_verify: false                   # 手动验证子任务
+
+output:
+  base_dir: "llm_control_output"         # 输出目录
 ```
 
 **获取API密钥**:
@@ -184,7 +215,23 @@ timeout: 60
 - `openai/gpt-4-vision-preview` - OpenAI的视觉模型
 - `google/gemini-pro-vision` - Google的视觉模型
 
-### 3. 准备Habitat配置
+### 3. 测试配置（推荐）
+
+在运行主程序前，先测试配置是否正确：
+
+```bash
+# 测试API连接和配置
+python test_config.py
+```
+
+测试内容包括：
+- ✅ 配置文件加载
+- ✅ API连接测试
+- ✅ 视觉模型支持检查
+
+如果看到 `🎉 所有测试通过！` 说明系统已就绪。
+
+### 4. 准备Habitat配置
 
 使用8方向相机配置：
 ```bash
@@ -192,11 +239,11 @@ timeout: 60
 ../VLN_CE/habitat_extensions/config/vlnce_task_enhanced.yaml
 ```
 
-### 4. 运行程序
+### 5. 运行程序
 
 ```bash
-# 在 sub-vlm 目录下运行
-cd sub-vlm
+# 在 Sub_vlm 目录下运行
+cd Sub_vlm
 
 python llm_manual_control.py \
     ../VLN_CE/habitat_extensions/config/vlnce_task_enhanced.yaml \

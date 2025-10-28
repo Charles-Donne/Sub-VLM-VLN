@@ -46,6 +46,7 @@ analysis_results/
 # API keys and sensitive config
 api_config.yaml
 llm_api/api_config.yaml
+Sub_vlm/llm_config.yaml
 
 # OS files
 .DS_Store

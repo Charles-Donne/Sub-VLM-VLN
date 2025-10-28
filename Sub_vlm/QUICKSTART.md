@@ -1,36 +1,67 @@
 # 快速开始指南 - LLM辅助导航系统
 
-## ⚡ 5分钟快速上手
+## ⚡ 3分钟快速上手
 
-### 第一步：配置API密钥
+### 方式1：使用配置向导（推荐）
+
+```bash
+# 在 Sub_vlm 目录下运行
+cd Sub_vlm
+
+# 运行配置向导
+bash setup_llm_control.sh
+```
+
+配置向导会自动帮你：
+- ✅ 创建配置文件
+- ✅ 设置API密钥
+- ✅ 选择LLM模型
+- ✅ 检查依赖包
+- ✅ 安装缺失的包
+
+### 方式2：手动配置
 
 ```bash
 # 1. 复制配置模板
-cp llm_config.yaml.template llm_config.yaml
+cp "llm_config.yaml copy.template" llm_config.yaml
 
 # 2. 编辑配置文件
 vim llm_config.yaml  # 或使用任何编辑器
 ```
 
-修改 `api_key` 字段：
+修改配置文件中的 API 密钥：
 ```yaml
-api_key: "YOUR_API_KEY_HERE"  # 替换为你的实际API密钥
+openrouter:
+  api_key: "sk-or-v1-YOUR_API_KEY_HERE"  # 替换为你的实际API密钥
 ```
 
 **获取API密钥**：访问 https://openrouter.ai/keys
 
-### 第二步：运行程序
+---
+
+### 第二步：测试配置（推荐）
 
 ```bash
-# 在 sub-vlm 目录下运行
-cd sub-vlm
+# 测试API连接和配置
+python test_config.py
+```
 
+如果看到 `🎉 所有测试通过！` 说明配置成功。
+
+---
+
+### 第三步：运行程序
+
+```bash
+# 在 Sub_vlm 目录下运行
 python llm_manual_control.py \
     ../VLN_CE/habitat_extensions/config/vlnce_task_enhanced.yaml \
     ./llm_output
 ```
 
-### 第三步：开始导航
+---
+
+### 第四步：开始导航
 
 1. **观察环境**：系统自动采集8方向图像
 2. **查看子任务**：LLM生成第一个子任务

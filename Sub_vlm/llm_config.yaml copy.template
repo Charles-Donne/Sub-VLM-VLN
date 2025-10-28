@@ -1,26 +1,46 @@
-# LLM API配置模板
-# 请复制此文件为 llm_config.yaml 并填入你的API信息
+# LLM API配置文件模板
+# 使用说明：
+# 1. 复制此文件并重命名为 llm_config.yaml
+# 2. 填入你自己的API密钥
+# 3. llm_config.yaml 不会被提交到git（已在.gitignore中）
 
-# OpenRouter API密钥
-# 获取地址: https://openrouter.ai/keys
-api_key: "YOUR_API_KEY_HERE"
+openrouter:
+  # 从 https://openrouter.ai/keys 获取你的API密钥
+  api_key: "sk-or-v1-YOUR_API_KEY_HERE"
+  
+  # API基础URL
+  base_url: "https://openrouter.ai/api/v1"
+  
+  # 模型配置
+  # 推荐模型（支持视觉-语言多模态）:
+  #   - anthropic/claude-3-5-sonnet (推荐，强大的视觉理解能力)
+  #   - openai/gpt-4-vision-preview (OpenAI视觉模型)
+  #   - google/gemini-pro-vision (Google视觉模型)
+  default_model: "anthropic/claude-3-5-sonnet"
+  
+  # 模型参数
+  temperature: 0.7      # 温度：0-1，越高越随机，越低越确定
+  max_tokens: 2000      # 最大输出token数（视觉任务建议2000+）
+  
+  # 网络设置
+  timeout: 60           # 请求超时时间（秒），视觉任务建议60+
 
-# API基础URL
-base_url: "https://openrouter.ai/api/v1"
+# 导航控制配置
+navigation:
+  # 观察配置
+  observation:
+    enable_8_directions: true      # 启用8方向观察
+    save_compass_view: true        # 保存罗盘式可视化
+    save_individual_views: true    # 保存单独的方向图像
+  
+  # 子任务配置
+  subtask:
+    auto_verify: false             # 是否自动验证（false=手动按c验证）
+    save_subtask_history: true     # 保存子任务历史
+    save_action_logs: true         # 保存每步动作日志
 
-# 模型名称
-# 推荐模型（支持视觉）:
-#   - anthropic/claude-3-5-sonnet (推荐，强大的视觉理解能力)
-#   - openai/gpt-4-vision-preview
-#   - google/gemini-pro-vision
-model: "anthropic/claude-3-5-sonnet"
-
-# 温度参数 (0.0-1.0)
-# 较低的温度使输出更确定性，较高的温度使输出更多样化
-temperature: 0.7
-
-# 最大token数
-max_tokens: 2000
-
-# 请求超时（秒）
-timeout: 60
+# 输出配置
+output:
+  base_dir: "llm_control_output"   # 输出基础目录
+  use_episode_id: true             # 使用episode ID作为子目录名
+  save_summary: true               # 保存episode汇总
