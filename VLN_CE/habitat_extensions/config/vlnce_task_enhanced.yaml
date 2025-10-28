@@ -20,8 +20,8 @@ SIMULATOR:
     ]
   
   # 动作参数（可调整）
-  FORWARD_STEP_SIZE: 0.5   # 前进步长（米）- 可改为 0.1, 0.5, 1.0 等
-  TURN_ANGLE: 45            # 转向角度（度）- 可改为 10, 15, 30, 45, 90 等
+  FORWARD_STEP_SIZE: 0.25   # 前进步长（米）
+  TURN_ANGLE: 30            # 转向角度（度）
   
   HABITAT_SIM_V0:
     GPU_DEVICE_ID: 0
@@ -108,11 +108,9 @@ TASK:
     VLN_ORACLE_PROGRESS_SENSOR
   ]
   INSTRUCTION_SENSOR_UUID: instruction
-  
-  # 可用动作列表
   POSSIBLE_ACTIONS: [STOP, MOVE_FORWARD, TURN_LEFT, TURN_RIGHT]
-  
   MEASUREMENTS: [
+    TOP_DOWN_MAP_VLNCE,
     DISTANCE_TO_GOAL,
     SUCCESS,
     SPL,
@@ -126,10 +124,10 @@ TASK:
   SPL:
     SUCCESS_DISTANCE: 3.0
   NDTW:
-    GT_PATH: data/datasets/R2R_VLNCE_v1-3_preprocessed/{split}/{split}_gt.json.gz
+    GT_PATH: /root/autodl-tmp/data/datasets/R2R_VLNCE_v1-3_preprocessed/{split}/{split}_gt.json.gz
 
 DATASET:
   TYPE: VLN-CE-v1
   SPLIT: val_unseen
-  DATA_PATH: data/datasets/R2R_VLNCE_v1-3_preprocessed/{split}/{split}.json.gz
-  SCENES_DIR: data/scene_datasets/
+  DATA_PATH: /root/autodl-tmp/data/datasets/R2R_VLNCE_v1-3_preprocessed/{split}/{split}.json.gz
+  SCENES_DIR: /root/autodl-tmp/data/scene_datasets
