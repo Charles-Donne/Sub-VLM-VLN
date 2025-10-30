@@ -7,6 +7,11 @@ import requests
 import base64
 from typing import Dict, List, Tuple, Optional
 from Sub_vlm.llm_config import LLMConfig
+from Sub_vlm.prompts import (
+    get_initial_planning_prompt,
+    get_verification_prompt,
+    get_task_completion_prompt
+)
 
 
 class SubTask:
@@ -72,34 +77,7 @@ class LLMPlanner:
         Returns:
             prompt文本
         """
-        prompt = f"""你是一个视觉-语言导航（VLN）任务的规划助手。你的任务是帮助智能体完成室内导航任务。
-
-# 当前任务
-完整导航指令: {instruction}
-
-# 观察信息
-我会提供8个方向的观察图像（从前方开始顺时针）：
-{', '.join(direction_names)}
-
-# 你的任务
-基于完整指令和当前观察，生成第一个子任务。子任务应该是可完成的小步骤。
-
-# 输出格式（JSON）
-请严格按照以下JSON格式输出，不要添加任何其他文字：
-{{
-    "subtask_description": "具体的子任务描述，例如：向前走到走廊尽头的门口",
-    "planning_hints": "完成子任务的规划提示，例如：保持直行，注意观察前方是否有门或墙壁。预计需要5-8步前进",
-    "completion_criteria": "判断子任务完成的标准，例如：前方可见门框或墙壁距离小于2米",
-    "reasoning": "你的推理过程，说明为什么选择这个子任务"
-}}
-
-注意事项：
-1. 子任务要具体、可执行
-2. 规划提示要包含方向、距离、标志物等关键信息
-3. 完成标准要明确、可观察
-4. 考虑智能体的实际能力：只能前进、左转、右转、停止
-"""
-        return prompt
+        return get_initial_planning_prompt(instruction, direction_names)
     
     def _build_verification_prompt(self, 
                                    instruction: str,
@@ -116,44 +94,13 @@ class LLMPlanner:
         Returns:
             prompt文本
         """
-        prompt = f"""你是一个视觉-语言导航（VLN）任务的验证助手。你需要判断当前子任务是否已完成。
-
-# 任务背景
-完整导航指令: {instruction}
-
-# 当前子任务
-- 描述: {subtask.description}
-- 完成标准: {subtask.completion_criteria}
-- 规划提示: {subtask.planning_hints}
-
-# 当前观察
-我会提供8个方向的观察图像（从前方开始顺时针）：
-{', '.join(direction_names)}
-
-# 你的任务
-1. 判断当前子任务是否已完成
-2. 如果已完成，生成下一个子任务
-3. 如果未完成，给出继续完成的建议
-
-# 输出格式（JSON）
-请严格按照以下JSON格式输出，不要添加任何其他文字：
-{{
-    "is_completed": true/false,
-    "completion_analysis": "分析子任务完成情况的详细说明",
-    "next_subtask": {{
-        "subtask_description": "下一个子任务描述（如果当前已完成）",
-        "planning_hints": "规划提示",
-        "completion_criteria": "完成标准"
-    }},
-    "continuation_advice": "如果未完成，给出继续完成的建议（如果已完成则为null）"
-}}
-
-注意事项：
-1. 仔细对比观察图像和完成标准
-2. 如果生成下一个子任务，要确保它与总体指令一致
-3. 建议要具体、可操作
-"""
-        return prompt
+        return get_verification_prompt(
+            instruction,
+            subtask.description,
+            subtask.completion_criteria,
+            subtask.planning_hints,
+            direction_names
+        )
     
     def _build_task_completion_prompt(self,
                                      instruction: str,
@@ -168,33 +115,7 @@ class LLMPlanner:
         Returns:
             prompt文本
         """
-        prompt = f"""你是一个视觉-语言导航（VLN）任务的验证助手。你需要判断整个导航任务是否已完成。
-
-# 完整导航指令
-{instruction}
-
-# 当前观察
-我会提供8个方向的观察图像（从前方开始顺时针）：
-{', '.join(direction_names)}
-
-# 你的任务
-判断智能体是否已经到达指令描述的目标位置。
-
-# 输出格式（JSON）
-请严格按照以下JSON格式输出，不要添加任何其他文字：
-{{
-    "task_completed": true/false,
-    "confidence": 0.0-1.0,
-    "analysis": "详细分析为什么认为任务已完成或未完成",
-    "recommendation": "如果未完成，建议下一步做什么"
-}}
-
-注意事项：
-1. 仔细对比当前观察和指令中描述的目标位置
-2. 给出你的置信度评分
-3. 分析要基于视觉证据
-"""
-        return prompt
+        return get_task_completion_prompt(instruction, direction_names)
     
     def _call_llm_api(self, 
                      prompt: str, 
@@ -302,17 +223,20 @@ class LLMPlanner:
         
         try:
             subtask = SubTask(
-                description=response['subtask_description'],
+                description=response['subtask_instruction'],
                 planning_hints=response['planning_hints'],
                 completion_criteria=response['completion_criteria']
             )
             
             print(f"\n📋 生成的子任务:")
-            print(f"  描述: {subtask.description}")
-            print(f"  提示: {subtask.planning_hints}")
-            print(f"  标准: {subtask.completion_criteria}")
+            print(f"  当前位置: {response.get('current_location', 'N/A')}")
+            print(f"  指令序列: {response.get('instruction_sequence', 'N/A')}")
+            print(f"  子任务目的地: {response.get('subtask_destination', 'N/A')}")
+            print(f"  子任务指令: {subtask.description}")
+            print(f"  规划提示: {subtask.planning_hints}")
+            print(f"  完成标准: {subtask.completion_criteria}")
             if 'reasoning' in response:
-                print(f"  推理: {response['reasoning']}")
+                print(f"  推理过程: {response['reasoning']}")
             
             return subtask
             
