@@ -17,10 +17,10 @@ model: "qwen/qwen3-vl-235b-a22b-instruct"
 
 # 温度参数 (0.0-1.0)
 # 较低的温度使输出更确定性，较高的温度使输出更多样化
-temperature: 0.7
+temperature: 0.2
 
 # 最大token数
-max_tokens: 2000
+max_tokens: 5000
 
 # 请求超时（秒）
 timeout: 60
