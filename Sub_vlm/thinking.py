@@ -183,17 +183,45 @@ class LLMPlanner:
                 content_text = content_text[:-3]
             content_text = content_text.strip()
             
-            parsed_json = json.loads(content_text)
-            print("✓ LLM响应解析成功")
+            # 尝试解析JSON
+            try:
+                parsed_json = json.loads(content_text)
+            except json.JSONDecodeError as e:
+                # 如果解析失败，尝试提取第一个完整的JSON对象
+                print(f"⚠️ 初次JSON解析失败: {e}")
+                print(f"📝 尝试修复JSON格式...")
+                
+                # 尝试找到第一个完整的JSON对象
+                brace_count = 0
+                json_end = -1
+                for i, char in enumerate(content_text):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_end = i + 1
+                            break
+                
+                if json_end > 0:
+                    content_text = content_text[:json_end]
+                    try:
+                        parsed_json = json.loads(content_text)
+                        print("✓ JSON修复成功")
+                    except json.JSONDecodeError:
+                        print(f"✗ JSON修复失败")
+                        print(f"原始响应: {content_text[:500]}...")
+                        return None
+                else:
+                    print(f"✗ 无法找到完整的JSON对象")
+                    print(f"原始响应: {content_text[:500]}...")
+                    return None
             
+            print("✓ LLM响应解析成功")
             return parsed_json
             
         except requests.exceptions.RequestException as e:
             print(f"✗ API请求失败: {e}")
-            return None
-        except json.JSONDecodeError as e:
-            print(f"✗ JSON解析失败: {e}")
-            print(f"原始响应: {content_text[:500]}...")
             return None
         except Exception as e:
             print(f"✗ 未知错误: {e}")
@@ -222,6 +250,15 @@ class LLMPlanner:
             return None
         
         try:
+            # 验证必需字段
+            required_fields = ['subtask_instruction', 'planning_hints', 'completion_criteria']
+            missing_fields = [field for field in required_fields if field not in response]
+            
+            if missing_fields:
+                print(f"✗ 响应缺少必要字段: {', '.join(missing_fields)}")
+                print(f"✗ 实际收到的字段: {list(response.keys())}")
+                return None
+            
             subtask = SubTask(
                 description=response['subtask_instruction'],
                 planning_hints=response['planning_hints'],
@@ -241,7 +278,11 @@ class LLMPlanner:
             return subtask
             
         except KeyError as e:
-            print(f"✗ 响应缺少必要字段: {e}")
+            print(f"✗ 字段访问错误: {e}")
+            print(f"✗ 实际收到的字段: {list(response.keys()) if response else 'None'}")
+            return None
+        except Exception as e:
+            print(f"✗ 子任务创建失败: {e}")
             return None
     
     def verify_and_plan_next(self,
@@ -274,17 +315,35 @@ class LLMPlanner:
             return False, None, "API调用失败，无法验证"
         
         try:
+            # 验证必需字段
+            if 'is_completed' not in response:
+                print(f"✗ 响应缺少 'is_completed' 字段")
+                print(f"✗ 实际收到的字段: {list(response.keys())}")
+                return False, None, "响应格式错误：缺少is_completed字段"
+            
             is_completed = response['is_completed']
-            analysis = response['completion_analysis']
+            analysis = response.get('completion_analysis', '无分析信息')
             
             print(f"\n🔍 子任务验证结果:")
             print(f"  完成状态: {'✓ 已完成' if is_completed else '✗ 未完成'}")
             print(f"  分析: {analysis}")
             
             if is_completed:
+                # 验证 next_subtask 字段
+                if 'next_subtask' not in response:
+                    print(f"✗ 已完成但缺少 'next_subtask' 字段")
+                    return False, None, "响应格式错误：已完成但无下一个子任务"
+                
                 next_data = response['next_subtask']
+                required_subtask_fields = ['subtask_instruction', 'planning_hints', 'completion_criteria']
+                missing_fields = [field for field in required_subtask_fields if field not in next_data]
+                
+                if missing_fields:
+                    print(f"✗ next_subtask 缺少字段: {', '.join(missing_fields)}")
+                    return False, None, f"next_subtask格式错误：缺少{', '.join(missing_fields)}"
+                
                 next_subtask = SubTask(
-                    description=next_data['subtask_description'],
+                    description=next_data['subtask_instruction'],
                     planning_hints=next_data['planning_hints'],
                     completion_criteria=next_data['completion_criteria']
                 )
@@ -301,8 +360,12 @@ class LLMPlanner:
                 return False, None, advice
                 
         except KeyError as e:
-            print(f"✗ 响应缺少必要字段: {e}")
-            return False, None, "响应格式错误"
+            print(f"✗ 字段访问错误: {e}")
+            print(f"✗ 实际收到的字段: {list(response.keys()) if response else 'None'}")
+            return False, None, f"字段访问错误: {e}"
+        except Exception as e:
+            print(f"✗ 验证处理失败: {e}")
+            return False, None, f"处理异常: {e}"
     
     def check_task_completion(self,
                              instruction: str,
@@ -327,20 +390,38 @@ class LLMPlanner:
             return False, 0.0, "API调用失败"
         
         try:
+            # 验证必需字段
+            required_fields = ['task_completed', 'confidence', 'analysis']
+            missing_fields = [field for field in required_fields if field not in response]
+            
+            if missing_fields:
+                print(f"✗ 响应缺少必要字段: {', '.join(missing_fields)}")
+                print(f"✗ 实际收到的字段: {list(response.keys())}")
+                return False, 0.0, f"响应格式错误：缺少{', '.join(missing_fields)}"
+            
             is_completed = response['task_completed']
-            confidence = response['confidence']
+            confidence = float(response['confidence'])  # 确保转换为浮点数
             analysis = response['analysis']
+            
+            # 验证 confidence 范围
+            if not (0.0 <= confidence <= 1.0):
+                print(f"⚠️ 置信度超出范围: {confidence}，将限制在[0.0, 1.0]")
+                confidence = max(0.0, min(1.0, confidence))
             
             print(f"\n🎯 任务完成检查:")
             print(f"  状态: {'✓ 已完成' if is_completed else '✗ 未完成'}")
             print(f"  置信度: {confidence:.2%}")
             print(f"  分析: {analysis}")
             
-            if not is_completed and 'recommendation' in response:
+            if not is_completed and 'recommendation' in response and response['recommendation']:
                 print(f"  建议: {response['recommendation']}")
             
             return is_completed, confidence, analysis
             
-        except KeyError as e:
-            print(f"✗ 响应缺少必要字段: {e}")
-            return False, 0.0, "响应格式错误"
+        except (KeyError, ValueError, TypeError) as e:
+            print(f"✗ 字段解析错误: {e}")
+            print(f"✗ 实际收到的字段: {list(response.keys()) if response else 'None'}")
+            return False, 0.0, f"字段解析错误: {e}"
+        except Exception as e:
+            print(f"✗ 任务检查失败: {e}")
+            return False, 0.0, f"处理异常: {e}"

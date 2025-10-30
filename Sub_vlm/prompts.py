@@ -39,6 +39,23 @@ Select the NEXT intermediate waypoint from the instruction sequence. Requirement
 3. Must be achievable with 5-15 actions
 
 # Output Requirements (Strict JSON Format)
+
+**CRITICAL RULES - MUST FOLLOW:**
+1. Output ONLY a single valid JSON object
+2. Do NOT include ANY text before or after the JSON
+3. Do NOT include markdown code blocks (no ```)
+4. Use EXACTLY these 7 field names (case-sensitive):
+   - "current_location"
+   - "instruction_sequence"
+   - "subtask_destination"
+   - "subtask_instruction"
+   - "planning_hints"
+   - "completion_criteria"
+   - "reasoning"
+5. Do NOT add extra fields like "thought", "analysis", "notes", etc.
+6. Ensure all string values are properly escaped
+
+**Required JSON Structure:**
 {{
     "current_location": "Description of where the agent is with distances to key landmarks",
     "instruction_sequence": "Parsed waypoint sequence from global instruction (format: 'Location A → Location B → Location C (final)')",
@@ -125,11 +142,25 @@ IMAGE 8: Front-Left view (315°) - Diagonal front-left direction
 4. If NOT COMPLETED → Provide specific guidance for execution module
 
 # Output Requirements (Strict JSON Format)
+
+**CRITICAL RULES - MUST FOLLOW:**
+1. Output ONLY a single valid JSON object
+2. Do NOT include ANY text before or after the JSON
+3. Do NOT include markdown code blocks (no ```)
+4. Use EXACTLY these 4 field names (case-sensitive):
+   - "is_completed"
+   - "completion_analysis"
+   - "next_subtask" (object with 3 fields: subtask_instruction, planning_hints, completion_criteria)
+   - "continuation_advice"
+5. If subtask is completed, "continuation_advice" must be null
+6. If subtask is NOT completed, "next_subtask" fields can be empty strings
+
+**Required JSON Structure:**
 {{
     "is_completed": true/false,
     "completion_analysis": "Detailed analysis referencing specific images (e.g., 'In IMAGE 1, the door now occupies 45% of view and distance appears <1.5m, meeting criteria. In IMAGE 3, I can see...')",
     "next_subtask": {{
-        "subtask_description": "Next subtask if current completed",
+        "subtask_instruction": "Next subtask instruction if current completed",
         "planning_hints": "Execution guidance (direction, landmarks, actions needed)",
         "completion_criteria": "Observable verification criteria"
     }},
@@ -169,6 +200,20 @@ Carefully compare the TARGET LOCATION described in the goal with ALL 8 current o
 - Is the agent positioned as described?
 
 # Output Requirements (Strict JSON Format)
+
+**CRITICAL RULES - MUST FOLLOW:**
+1. Output ONLY a single valid JSON object
+2. Do NOT include ANY text before or after the JSON
+3. Do NOT include markdown code blocks (no ```)
+4. Use EXACTLY these 4 field names (case-sensitive):
+   - "task_completed"
+   - "confidence"
+   - "analysis"
+   - "recommendation"
+5. "confidence" must be a number between 0.0 and 1.0
+6. If task is completed, "recommendation" must be null
+
+**Required JSON Structure:**
 {{
     "task_completed": true/false,
     "confidence": 0.0-1.0,
