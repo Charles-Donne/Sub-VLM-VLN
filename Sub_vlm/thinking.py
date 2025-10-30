@@ -6,7 +6,6 @@ import json
 import requests
 import base64
 import os
-from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from Sub_vlm.llm_config import LLMConfig
 from Sub_vlm.prompts import (
@@ -45,106 +44,19 @@ class SubTask:
 class LLMPlanner:
     """LLM Planner - Responsible for subtask generation and verification"""
     
-    def __init__(self, config_path="llm_config.yaml", log_dir="navigation_logs"):
+    def __init__(self, config_path="llm_config.yaml", save_dir=None):
         """
         Initialize planner
         
         Args:
             config_path: LLM configuration file path
-            log_dir: Directory to save navigation logs and LLM responses
+            save_dir: Directory to save LLM outputs (if provided)
         """
         self.config = LLMConfig(config_path)
-        self.log_dir = log_dir
-        
-        # Create log directory if it doesn't exist
-        os.makedirs(log_dir, exist_ok=True)
-        
-        # Episode tracking
-        self.current_episode_id = None
-        self.episode_log = {
-            "subtasks": [],
-            "verifications": [],
-            "completions": []
-        }
-        
-        # Token usage tracking
-        self.total_prompt_tokens = 0
-        self.total_completion_tokens = 0
-        self.total_tokens = 0
-        self.api_call_count = 0
-        
+        self.save_dir = save_dir
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
         print(f"✓ LLM Planner initialized: {self.config}")
-        print(f"✓ Logs will be saved to: {log_dir}/")
-    
-    def start_episode(self, episode_id: str, instruction: str):
-        """
-        Start tracking a new episode
-        
-        Args:
-            episode_id: Episode identifier
-            instruction: Navigation instruction
-        """
-        self.current_episode_id = episode_id
-        self.episode_log = {
-            "episode_id": episode_id,
-            "instruction": instruction,
-            "start_time": datetime.now().isoformat(),
-            "subtasks": [],
-            "verifications": [],
-            "completions": [],
-            "token_usage": {
-                "total_prompt_tokens": 0,
-                "total_completion_tokens": 0,
-                "total_tokens": 0,
-                "api_calls": 0
-            }
-        }
-        
-        # Reset token counters
-        self.total_prompt_tokens = 0
-        self.total_completion_tokens = 0
-        self.total_tokens = 0
-        self.api_call_count = 0
-        
-        print(f"\n{'='*60}")
-        print(f"📝 Started Episode: {episode_id}")
-        print(f"📍 Instruction: {instruction}")
-        print(f"{'='*60}\n")
-    
-    def save_episode_log(self, status: str = "completed"):
-        """
-        Save episode log to JSON file
-        
-        Args:
-            status: Episode status ('completed', 'failed', 'timeout', etc.)
-        """
-        if self.current_episode_id is None:
-            print("⚠️ Warning: No active episode to save")
-            return
-        
-        # Update final info
-        self.episode_log["end_time"] = datetime.now().isoformat()
-        self.episode_log["status"] = status
-        self.episode_log["token_usage"] = {
-            "total_prompt_tokens": self.total_prompt_tokens,
-            "total_completion_tokens": self.total_completion_tokens,
-            "total_tokens": self.total_tokens,
-            "api_calls": self.api_call_count
-        }
-        
-        # Save to file
-        log_file = os.path.join(self.log_dir, f"episode_{self.current_episode_id}.json")
-        with open(log_file, 'w', encoding='utf-8') as f:
-            json.dump(self.episode_log, f, indent=2, ensure_ascii=False)
-        
-        print(f"\n💾 Episode log saved: {log_file}")
-        print(f"   - Total Subtasks: {len(self.episode_log['subtasks'])}")
-        print(f"   - Total Verifications: {len(self.episode_log['verifications'])}")
-        print(f"   - Total Completions: {len(self.episode_log['completions'])}")
-        print(f"   - API Calls: {self.api_call_count}")
-        print(f"   - Total Tokens: {self.total_tokens:,}")
-        
-        return log_file
     
     def encode_image_base64(self, image_path: str) -> str:
         """
@@ -265,22 +177,7 @@ class LLMPlanner:
             result = response.json()
             content_text = result['choices'][0]['message']['content']
             
-            # Track token usage
-            if 'usage' in result:
-                usage = result['usage']
-                prompt_tokens = usage.get('prompt_tokens', 0)
-                completion_tokens = usage.get('completion_tokens', 0)
-                total = usage.get('total_tokens', 0)
-                
-                self.total_prompt_tokens += prompt_tokens
-                self.total_completion_tokens += completion_tokens
-                self.total_tokens += total
-                self.api_call_count += 1
-                
-                print(f"📊 Token usage: {prompt_tokens} prompt + {completion_tokens} completion = {total} total")
-            
-            # Try to parse JSON
-            # Remove possible markdown code block markers
+            # Try to parse JSON - remove markdown code block markers
             content_text = content_text.strip()
             if content_text.startswith("```json"):
                 content_text = content_text[7:]
@@ -337,7 +234,8 @@ class LLMPlanner:
     def generate_initial_subtask(self,
                                 instruction: str,
                                 observation_images: List[str],
-                                direction_names: List[str]) -> Optional[SubTask]:
+                                direction_names: List[str],
+                                save_filename: str = None) -> Optional[SubTask]:
         """
         Generate initial subtask (at task start)
         
@@ -345,6 +243,7 @@ class LLMPlanner:
             instruction: Complete navigation instruction
             observation_images: List of 8 directional image paths
             direction_names: List of direction names
+            save_filename: Filename to save complete LLM output (optional)
             
         Returns:
             SubTask object, None if failed
@@ -372,35 +271,16 @@ class LLMPlanner:
                 completion_criteria=response['completion_criteria']
             )
             
-            print(f"\n📋 Generated Subtask:")
-            print(f"  Current Location: {response.get('current_location', 'N/A')}")
-            print(f"  Instruction Sequence: {response.get('instruction_sequence', 'N/A')}")
-            print(f"  Subtask Destination: {response.get('subtask_destination', 'N/A')}")
-            print(f"  Subtask Instruction: {subtask.description}")
-            print(f"  Planning Hints: {subtask.planning_hints[:100]}...")
-            print(f"  Completion Criteria: {subtask.completion_criteria[:100]}...")
-            if 'reasoning' in response:
-                print(f"  Reasoning: {response['reasoning'][:100]}...")
+            print(f"\n📋 Subtask Instruction: {subtask.description[:100]}...")
+            print(f"📋 Planning Hints: {subtask.planning_hints[:100]}...")
+            print(f"📋 Completion Criteria: {subtask.completion_criteria[:100]}...")
             
-            # Save to episode log
-            if self.current_episode_id:
-                subtask_log = {
-                    "step": len(self.episode_log['subtasks']) + 1,
-                    "timestamp": datetime.now().isoformat(),
-                    "type": "initial_subtask",
-                    "llm_response": response,  # Save complete LLM response
-                    "subtask": subtask.to_dict()
-                }
-                self.episode_log['subtasks'].append(subtask_log)
-                
-                # Also save individual subtask file
-                subtask_file = os.path.join(
-                    self.log_dir, 
-                    f"episode_{self.current_episode_id}_subtask_{len(self.episode_log['subtasks'])}.json"
-                )
-                with open(subtask_file, 'w', encoding='utf-8') as f:
-                    json.dump(subtask_log, f, indent=2, ensure_ascii=False)
-                print(f"  💾 Subtask saved to: {subtask_file}")
+            # Save complete LLM output if save_filename provided
+            if save_filename and self.save_dir:
+                filepath = os.path.join(self.save_dir, save_filename)
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(response, f, indent=2, ensure_ascii=False)
+                print(f"💾 Complete LLM output saved: {filepath}")
             
             return subtask
             
@@ -416,7 +296,8 @@ class LLMPlanner:
                             instruction: str,
                             current_subtask: SubTask,
                             observation_images: List[str],
-                            direction_names: List[str]) -> Tuple[bool, Optional[SubTask], Optional[str]]:
+                            direction_names: List[str],
+                            save_filename: str = None) -> Tuple[bool, Optional[SubTask], Optional[str]]:
         """
         Verify current subtask and plan next one
         
@@ -425,12 +306,10 @@ class LLMPlanner:
             current_subtask: Current subtask
             observation_images: List of 8 directional image paths
             direction_names: List of direction names
+            save_filename: Filename to save complete LLM output (optional)
             
         Returns:
             (is_completed, next_subtask, advice)
-            - is_completed: Whether current subtask is completed
-            - next_subtask: Next subtask (if current is completed)
-            - advice: Continuation advice (if not completed)
         """
         prompt = self._build_verification_prompt(
             instruction, current_subtask, direction_names
@@ -439,30 +318,26 @@ class LLMPlanner:
         response = self._call_llm_api(prompt, observation_images)
         
         if response is None:
-            return False, None, "API call failed, unable to verify"
+            return False, None, "API call failed"
         
         try:
+            # Save complete LLM output if save_filename provided
+            if save_filename and self.save_dir:
+                filepath = os.path.join(self.save_dir, save_filename)
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(response, f, indent=2, ensure_ascii=False)
+                print(f"💾 Complete LLM output saved: {filepath}")
+            
             # Validate required fields
             if 'is_completed' not in response:
                 print(f"✗ Response missing 'is_completed' field")
-                print(f"✗ Actual fields received: {list(response.keys())}")
-                return False, None, "Response format error: missing is_completed field"
+                return False, None, "Response format error"
             
             is_completed = response['is_completed']
             analysis = response.get('completion_analysis', 'No analysis provided')
             
-            print(f"\n🔍 Subtask Verification Result:")
-            print(f"  Completion Status: {'✓ Completed' if is_completed else '✗ Not Completed'}")
-            print(f"  Analysis: {analysis[:150]}...")
-            
-            # Save to episode log
-            verification_log = {
-                "step": len(self.episode_log['verifications']) + 1 if self.current_episode_id else 0,
-                "timestamp": datetime.now().isoformat(),
-                "verified_subtask": current_subtask.to_dict(),
-                "llm_response": response,  # Save complete LLM response
-                "is_completed": is_completed
-            }
+            print(f"\n🔍 Is Completed: {'Yes' if is_completed else 'No'}")
+            print(f"🔍 Completion Analysis: {analysis[:150]}...")
             
             if is_completed:
                 # Validate next_subtask field
@@ -484,43 +359,14 @@ class LLMPlanner:
                     completion_criteria=next_data['completion_criteria']
                 )
                 
-                print(f"\n📋 Next Subtask:")
-                print(f"  Description: {next_subtask.description}")
-                print(f"  Hints: {next_subtask.planning_hints[:100]}...")
-                print(f"  Criteria: {next_subtask.completion_criteria[:100]}...")
-                
-                verification_log['next_subtask'] = next_subtask.to_dict()
-                
-                if self.current_episode_id:
-                    self.episode_log['verifications'].append(verification_log)
-                    
-                    # Save individual verification file
-                    verification_file = os.path.join(
-                        self.log_dir,
-                        f"episode_{self.current_episode_id}_verification_{len(self.episode_log['verifications'])}.json"
-                    )
-                    with open(verification_file, 'w', encoding='utf-8') as f:
-                        json.dump(verification_log, f, indent=2, ensure_ascii=False)
-                    print(f"  💾 Verification saved to: {verification_file}")
+                print(f"\n📋 Next Subtask Instruction: {next_subtask.description[:100]}...")
+                print(f"📋 Planning Hints: {next_subtask.planning_hints[:100]}...")
+                print(f"📋 Completion Criteria: {next_subtask.completion_criteria[:100]}...")
                 
                 return True, next_subtask, None
             else:
                 advice = response.get('continuation_advice', 'Continue as planned')
-                print(f"  Advice: {advice[:150]}...")
-                
-                verification_log['continuation_advice'] = advice
-                
-                if self.current_episode_id:
-                    self.episode_log['verifications'].append(verification_log)
-                    
-                    # Save individual verification file
-                    verification_file = os.path.join(
-                        self.log_dir,
-                        f"episode_{self.current_episode_id}_verification_{len(self.episode_log['verifications'])}.json"
-                    )
-                    with open(verification_file, 'w', encoding='utf-8') as f:
-                        json.dump(verification_log, f, indent=2, ensure_ascii=False)
-                    print(f"  💾 Verification saved to: {verification_file}")
+                print(f"📋 Continuation Advice: {advice[:150]}...")
                 
                 return False, None, advice
                 
@@ -535,7 +381,8 @@ class LLMPlanner:
     def check_task_completion(self,
                              instruction: str,
                              observation_images: List[str],
-                             direction_names: List[str]) -> Tuple[bool, float, str]:
+                             direction_names: List[str],
+                             save_filename: str = None) -> Tuple[bool, float, str]:
         """
         Check if the entire task is completed
         
@@ -543,6 +390,7 @@ class LLMPlanner:
             instruction: Complete navigation instruction
             observation_images: List of 8 directional image paths
             direction_names: List of direction names
+            save_filename: Filename to save complete LLM output (optional)
             
         Returns:
             (is_completed, confidence, analysis)
@@ -555,6 +403,12 @@ class LLMPlanner:
             return False, 0.0, "API call failed"
         
         try:
+            # Save complete LLM output if save_filename provided
+            if save_filename and self.save_dir:
+                filepath = os.path.join(self.save_dir, save_filename)
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(response, f, indent=2, ensure_ascii=False)
+                print(f"💾 Complete LLM output saved: {filepath}")
             # Validate required fields
             required_fields = ['task_completed', 'confidence', 'analysis']
             missing_fields = [field for field in required_fields if field not in response]
@@ -570,36 +424,15 @@ class LLMPlanner:
             
             # Validate confidence range
             if not (0.0 <= confidence <= 1.0):
-                print(f"⚠️ Confidence out of range: {confidence}, will clamp to [0.0, 1.0]")
+                print(f"⚠️ Confidence out of range: {confidence}, clamping to [0.0, 1.0]")
                 confidence = max(0.0, min(1.0, confidence))
             
-            print(f"\n🎯 Task Completion Check:")
-            print(f"  Status: {'✓ Completed' if is_completed else '✗ Not Completed'}")
-            print(f"  Confidence: {confidence:.2%}")
-            print(f"  Analysis: {analysis[:150]}...")
+            print(f"\n🎯 Task Completed: {'Yes' if is_completed else 'No'}")
+            print(f"🎯 Confidence: {confidence:.2%}")
+            print(f"🎯 Analysis: {analysis[:150]}...")
             
             if not is_completed and 'recommendation' in response and response['recommendation']:
-                print(f"  Recommendation: {response['recommendation'][:150]}...")
-            
-            # Save to episode log
-            if self.current_episode_id:
-                completion_log = {
-                    "step": len(self.episode_log['completions']) + 1,
-                    "timestamp": datetime.now().isoformat(),
-                    "llm_response": response,  # Save complete LLM response
-                    "task_completed": is_completed,
-                    "confidence": confidence
-                }
-                self.episode_log['completions'].append(completion_log)
-                
-                # Save individual completion check file
-                completion_file = os.path.join(
-                    self.log_dir,
-                    f"episode_{self.current_episode_id}_completion_{len(self.episode_log['completions'])}.json"
-                )
-                with open(completion_file, 'w', encoding='utf-8') as f:
-                    json.dump(completion_log, f, indent=2, ensure_ascii=False)
-                print(f"  💾 Completion check saved to: {completion_file}")
+                print(f"🎯 Recommendation: {response['recommendation'][:150]}...")
             
             return is_completed, confidence, analysis
             
