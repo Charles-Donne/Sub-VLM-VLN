@@ -1,6 +1,29 @@
 """
 LLM Planning and Reasoning Module
 Responsible for subtask generation, completion verification, and navigation planning
+
+模块架构:
+1. 初始子任务生成模块 (generate_initial_subtask)
+   - 在任务开始时分析环境,生成第一个子任务
+   - 输出: SubTask对象(目的地、描述、规划提示、完成约束条件)
+   
+2. 验证+再规划模块 (verify_and_replan)
+   - 接收上一步的子任务目的地、指令、完成约束条件
+   - 验证是否完成子任务
+   - 如果完成: 生成下一个子任务
+   - 如果未完成: 修改当前子任务指令,保持目的地不变
+   - 输出: (is_completed, SubTask对象)
+   
+3. 全局任务完成检查 (check_task_completion)
+   - 检查整个导航任务是否完成
+   - 输出: (is_completed, confidence, analysis)
+
+使用流程:
+Step 1: generate_initial_subtask() -> SubTask
+Step 2: 执行动作...
+Step 3: verify_and_replan() -> (is_completed, SubTask)
+Step 4a: 如果completed=True -> SubTask是新的子任务,回到Step 2
+Step 4b: 如果completed=False -> SubTask是修改后的当前子任务,回到Step 2
 """
 import json
 import requests
@@ -10,136 +33,87 @@ from typing import Dict, List, Tuple, Optional
 from Sub_vlm.llm_config import LLMConfig
 from Sub_vlm.prompts import (
     get_initial_planning_prompt,
-    get_verification_prompt,
+    get_verification_replanning_prompt,
     get_task_completion_prompt
 )
 
 
 class SubTask:
-    """Subtask data structure"""
+    """子任务数据结构"""
     
-    def __init__(self, description: str, planning_hints: str, completion_criteria: str):
+    def __init__(self, destination: str, instruction: str, planning_hints: str, completion_criteria: str):
         """
         Args:
-            description: Subtask description
-            planning_hints: Planning hints
-            completion_criteria: Completion criteria
+            destination: 子任务目的地(目标路径点)
+            instruction: 子任务指令
+            planning_hints: 规划提示
+            completion_criteria: 完成约束条件
         """
-        self.description = description
+        self.destination = destination
+        self.instruction = instruction
         self.planning_hints = planning_hints
         self.completion_criteria = completion_criteria
     
     def to_dict(self):
-        """Convert to dictionary"""
+        """转换为字典"""
         return {
-            "description": self.description,
+            "destination": self.destination,
+            "instruction": self.instruction,
             "planning_hints": self.planning_hints,
             "completion_criteria": self.completion_criteria
         }
     
     def __repr__(self):
-        return f"SubTask(description='{self.description[:50]}...')"
+        return f"SubTask(destination='{self.destination[:30]}...', instruction='{self.instruction[:50]}...')"
 
 
 class LLMPlanner:
-    """LLM Planner - Responsible for subtask generation and verification"""
+    """LLM规划器 - 负责子任务生成和验证"""
     
-    def __init__(self, config_path="llm_config.yaml", save_dir=None):
-        """
-        Initialize planner
-        
-        Args:
-            config_path: LLM configuration file path
-            save_dir: Directory to save LLM outputs (if provided)
-        """
+    def __init__(self, config_path="llm_config.yaml"):
+        """初始化规划器"""
         self.config = LLMConfig(config_path)
-        self.save_dir = save_dir
-        if save_dir:
-            os.makedirs(save_dir, exist_ok=True)
         print(f"✓ LLM Planner initialized: {self.config}")
     
     def encode_image_base64(self, image_path: str) -> str:
-        """
-        Encode image to base64
-        
-        Args:
-            image_path: Image file path
-            
-        Returns:
-            Base64 encoded image string
-        """
+        """编码图像为base64"""
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode('utf-8')
     
     def _build_initial_planning_prompt(self, instruction: str, direction_names: List[str]) -> str:
-        """
-        Build initial planning prompt (at task start)
-        
-        Args:
-            instruction: Complete navigation instruction
-            direction_names: List of direction names (corresponding to 8 images)
-            
-        Returns:
-            Prompt text
-        """
+        """构建初始规划prompt"""
         return get_initial_planning_prompt(instruction, direction_names)
     
-    def _build_verification_prompt(self, 
-                                   instruction: str,
-                                   subtask: SubTask,
-                                   direction_names: List[str]) -> str:
-        """
-        Build verification prompt (check if subtask is completed)
-        
-        Args:
-            instruction: Complete navigation instruction
-            subtask: Current subtask
-            direction_names: List of direction names
-            
-        Returns:
-            Prompt text
-        """
-        return get_verification_prompt(
+    def _build_verification_replanning_prompt(self, instruction: str, subtask: SubTask, direction_names: List[str]) -> str:
+        """构建验证+再规划prompt"""
+        return get_verification_replanning_prompt(
             instruction,
-            subtask.description,
+            subtask.destination,
+            subtask.instruction,
             subtask.completion_criteria,
-            subtask.planning_hints,
             direction_names
         )
     
-    def _build_task_completion_prompt(self,
-                                     instruction: str,
-                                     direction_names: List[str]) -> str:
-        """
-        Build task completion check prompt
-        
-        Args:
-            instruction: Complete navigation instruction
-            direction_names: List of direction names
-            
-        Returns:
-            Prompt text
-        """
+    def _build_task_completion_prompt(self, instruction: str, direction_names: List[str]) -> str:
+        """构建任务完成检查prompt"""
         return get_task_completion_prompt(instruction, direction_names)
     
-    def _call_llm_api(self, 
-                     prompt: str, 
-                     image_paths: List[str]) -> Optional[Dict]:
+    def _call_llm_api(self, prompt: str, image_paths: List[str]) -> Optional[Dict]:
         """
-        Call LLM API
+        调用LLM API
         
         Args:
-            prompt: Text prompt
-            image_paths: List of image file paths
+            prompt: 文本提示
+            image_paths: 图像文件路径列表
             
         Returns:
-            API response JSON data, None if failed
+            API响应的JSON数据,失败时返回None
         """
         try:
-            # Build message content
+            # 构建消息内容
             content = [{"type": "text", "text": prompt}]
             
-            # Add images
+            # 添加图像
             for img_path in image_paths:
                 img_base64 = self.encode_image_base64(img_path)
                 content.append({
@@ -149,20 +123,15 @@ class LLMPlanner:
                     }
                 })
             
-            # Build request
+            # 构建请求
             payload = {
                 "model": self.config.model,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": content
-                    }
-                ],
+                "messages": [{"role": "user", "content": content}],
                 "temperature": self.config.temperature,
                 "max_tokens": self.config.max_tokens
             }
             
-            # Send request
+            # 发送请求
             print(f"\n🤖 Calling LLM API ({self.config.model})...")
             response = requests.post(
                 f"{self.config.base_url}/chat/completions",
@@ -170,14 +139,13 @@ class LLMPlanner:
                 json=payload,
                 timeout=self.config.timeout
             )
-            
             response.raise_for_status()
             
-            # Parse response
+            # 解析响应
             result = response.json()
             content_text = result['choices'][0]['message']['content']
             
-            # Try to parse JSON - remove markdown code block markers
+            # 清理JSON标记
             content_text = content_text.strip()
             if content_text.startswith("```json"):
                 content_text = content_text[7:]
@@ -187,15 +155,14 @@ class LLMPlanner:
                 content_text = content_text[:-3]
             content_text = content_text.strip()
             
-            # Try to parse JSON
+            # 解析JSON
             try:
                 parsed_json = json.loads(content_text)
             except json.JSONDecodeError as e:
-                # If parsing fails, try to extract the first complete JSON object
                 print(f"⚠️ Initial JSON parsing failed: {e}")
                 print(f"📝 Attempting to fix JSON format...")
                 
-                # Try to find the first complete JSON object
+                # 尝试提取完整的JSON对象
                 brace_count = 0
                 json_end = -1
                 for i, char in enumerate(content_text):
@@ -234,212 +201,159 @@ class LLMPlanner:
     def generate_initial_subtask(self,
                                 instruction: str,
                                 observation_images: List[str],
-                                direction_names: List[str],
-                                save_filename: str = None) -> Optional[SubTask]:
+                                direction_names: List[str]) -> Tuple[Optional[Dict], Optional[SubTask]]:
         """
-        Generate initial subtask (at task start)
+        生成初始子任务(任务开始时)
         
         Args:
-            instruction: Complete navigation instruction
-            observation_images: List of 8 directional image paths
-            direction_names: List of direction names
-            save_filename: Filename to save complete LLM output (optional)
+            instruction: 完整导航指令
+            observation_images: 8方向图像路径列表
+            direction_names: 方向名称列表
             
         Returns:
-            SubTask object, None if failed
+            (response_dict, subtask)
+            - response_dict: 完整的LLM响应JSON字典
+            - subtask: SubTask对象,失败时返回None
         """
         prompt = self._build_initial_planning_prompt(instruction, direction_names)
-        
         response = self._call_llm_api(prompt, observation_images)
         
         if response is None:
-            return None
+            return None, None
         
         try:
-            # Validate required fields
-            required_fields = ['subtask_instruction', 'planning_hints', 'completion_criteria']
+            # 验证必需字段
+            required_fields = ['subtask_destination', 'subtask_instruction', 'planning_hints', 'completion_criteria']
             missing_fields = [field for field in required_fields if field not in response]
             
             if missing_fields:
                 print(f"✗ Response missing required fields: {', '.join(missing_fields)}")
                 print(f"✗ Actual fields received: {list(response.keys())}")
-                return None
+                return response, None
             
+            # 创建SubTask对象
             subtask = SubTask(
-                description=response['subtask_instruction'],
+                destination=response['subtask_destination'],
+                instruction=response['subtask_instruction'],
                 planning_hints=response['planning_hints'],
                 completion_criteria=response['completion_criteria']
             )
             
-            print(f"\n📋 Subtask Instruction: {subtask.description[:100]}...")
-            print(f"📋 Planning Hints: {subtask.planning_hints[:100]}...")
-            print(f"📋 Completion Criteria: {subtask.completion_criteria[:100]}...")
+            return response, subtask
             
-            # Save complete LLM output if save_filename provided
-            if save_filename and self.save_dir:
-                filepath = os.path.join(self.save_dir, save_filename)
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    json.dump(response, f, indent=2, ensure_ascii=False)
-                print(f"💾 Complete LLM output saved: {filepath}")
-            
-            return subtask
-            
-        except KeyError as e:
-            print(f"✗ Field access error: {e}")
-            print(f"✗ Actual fields received: {list(response.keys()) if response else 'None'}")
-            return None
         except Exception as e:
             print(f"✗ Subtask creation failed: {e}")
-            return None
+            return response, None
     
-    def verify_and_plan_next(self,
-                            instruction: str,
-                            current_subtask: SubTask,
-                            observation_images: List[str],
-                            direction_names: List[str],
-                            save_filename: str = None) -> Tuple[bool, Optional[SubTask], Optional[str]]:
+    def verify_and_replan(self,
+                         instruction: str,
+                         current_subtask: SubTask,
+                         observation_images: List[str],
+                         direction_names: List[str]) -> Tuple[Optional[Dict], bool, Optional[SubTask]]:
         """
-        Verify current subtask and plan next one
+        验证+再规划模块 - 验证子任务完成并规划下一步
+        
+        此模块负责:
+        1. 验证当前子任务是否完成(基于完成约束条件)
+        2. 如果完成: 生成下一个子任务
+        3. 如果未完成: 修改当前子任务指令,保持目的地不变
         
         Args:
-            instruction: Complete navigation instruction
-            current_subtask: Current subtask
-            observation_images: List of 8 directional image paths
-            direction_names: List of direction names
-            save_filename: Filename to save complete LLM output (optional)
+            instruction: 完整导航指令(全局任务)
+            current_subtask: 当前子任务(包含目的地、指令、完成约束条件)
+            observation_images: 8方向图像路径列表
+            direction_names: 方向名称列表
             
         Returns:
-            (is_completed, next_subtask, advice)
+            (response_dict, is_completed, subtask)
+            - response_dict: 完整的LLM响应JSON字典
+            - is_completed: 是否完成当前子任务
+            - subtask: 如果完成,返回新子任务; 如果未完成,返回修改后的当前子任务
         """
-        prompt = self._build_verification_prompt(
-            instruction, current_subtask, direction_names
-        )
-        
+        prompt = self._build_verification_replanning_prompt(instruction, current_subtask, direction_names)
         response = self._call_llm_api(prompt, observation_images)
         
         if response is None:
-            return False, None, "API call failed"
+            return None, False, None
         
         try:
-            # Save complete LLM output if save_filename provided
-            if save_filename and self.save_dir:
-                filepath = os.path.join(self.save_dir, save_filename)
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    json.dump(response, f, indent=2, ensure_ascii=False)
-                print(f"💾 Complete LLM output saved: {filepath}")
+            # 验证必需字段
+            required_fields = ['is_completed', 'subtask_destination', 'subtask_instruction', 
+                             'planning_hints', 'completion_criteria']
+            missing_fields = [field for field in required_fields if field not in response]
             
-            # Validate required fields
-            if 'is_completed' not in response:
-                print(f"✗ Response missing 'is_completed' field")
-                return False, None, "Response format error"
+            if missing_fields:
+                print(f"✗ Response missing required fields: {', '.join(missing_fields)}")
+                print(f"✗ Actual fields received: {list(response.keys())}")
+                return response, False, None
             
+            # 提取验证结果
             is_completed = response['is_completed']
-            analysis = response.get('completion_analysis', 'No analysis provided')
             
-            print(f"\n🔍 Is Completed: {'Yes' if is_completed else 'No'}")
-            print(f"🔍 Completion Analysis: {analysis[:150]}...")
+            # 创建SubTask对象(可能是新子任务或修改后的当前子任务)
+            subtask = SubTask(
+                destination=response['subtask_destination'],
+                instruction=response['subtask_instruction'],
+                planning_hints=response['planning_hints'],
+                completion_criteria=response['completion_criteria']
+            )
             
-            if is_completed:
-                # Validate next_subtask field
-                if 'next_subtask' not in response:
-                    print(f"✗ Completed but missing 'next_subtask' field")
-                    return False, None, "Response format error: completed but no next subtask"
+            return response, is_completed, subtask
                 
-                next_data = response['next_subtask']
-                required_subtask_fields = ['subtask_instruction', 'planning_hints', 'completion_criteria']
-                missing_fields = [field for field in required_subtask_fields if field not in next_data]
-                
-                if missing_fields:
-                    print(f"✗ next_subtask missing fields: {', '.join(missing_fields)}")
-                    return False, None, f"next_subtask format error: missing {', '.join(missing_fields)}"
-                
-                next_subtask = SubTask(
-                    description=next_data['subtask_instruction'],
-                    planning_hints=next_data['planning_hints'],
-                    completion_criteria=next_data['completion_criteria']
-                )
-                
-                print(f"\n📋 Next Subtask Instruction: {next_subtask.description[:100]}...")
-                print(f"📋 Planning Hints: {next_subtask.planning_hints[:100]}...")
-                print(f"📋 Completion Criteria: {next_subtask.completion_criteria[:100]}...")
-                
-                return True, next_subtask, None
-            else:
-                advice = response.get('continuation_advice', 'Continue as planned')
-                print(f"📋 Continuation Advice: {advice[:150]}...")
-                
-                return False, None, advice
-                
-        except KeyError as e:
-            print(f"✗ Field access error: {e}")
-            print(f"✗ Actual fields received: {list(response.keys()) if response else 'None'}")
-            return False, None, f"Field access error: {e}"
         except Exception as e:
-            print(f"✗ Verification processing failed: {e}")
-            return False, None, f"Processing exception: {e}"
+            print(f"✗ Verification and replanning failed: {e}")
+            return response, False, None
     
     def check_task_completion(self,
                              instruction: str,
                              observation_images: List[str],
-                             direction_names: List[str],
-                             save_filename: str = None) -> Tuple[bool, float, str]:
+                             direction_names: List[str]) -> Tuple[Optional[Dict], bool, float, str]:
         """
-        Check if the entire task is completed
+        检查整个任务是否完成
         
         Args:
-            instruction: Complete navigation instruction
-            observation_images: List of 8 directional image paths
-            direction_names: List of direction names
-            save_filename: Filename to save complete LLM output (optional)
+            instruction: 完整导航指令
+            observation_images: 8方向图像路径列表
+            direction_names: 方向名称列表
             
         Returns:
-            (is_completed, confidence, analysis)
+            (response_dict, is_completed, confidence, analysis)
+            - response_dict: 完整的LLM响应JSON字典
+            - is_completed: 是否完成任务
+            - confidence: 完成的置信度(0-1)
+            - analysis: 分析说明
         """
         prompt = self._build_task_completion_prompt(instruction, direction_names)
-        
         response = self._call_llm_api(prompt, observation_images)
         
         if response is None:
-            return False, 0.0, "API call failed"
+            return None, False, 0.0, "API call failed"
         
         try:
-            # Save complete LLM output if save_filename provided
-            if save_filename and self.save_dir:
-                filepath = os.path.join(self.save_dir, save_filename)
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    json.dump(response, f, indent=2, ensure_ascii=False)
-                print(f"💾 Complete LLM output saved: {filepath}")
-            # Validate required fields
+            # 验证必需字段
             required_fields = ['task_completed', 'confidence', 'analysis']
             missing_fields = [field for field in required_fields if field not in response]
             
             if missing_fields:
                 print(f"✗ Response missing required fields: {', '.join(missing_fields)}")
                 print(f"✗ Actual fields received: {list(response.keys())}")
-                return False, 0.0, f"Response format error: missing {', '.join(missing_fields)}"
+                return response, False, 0.0, f"Response format error: missing {', '.join(missing_fields)}"
             
             is_completed = response['task_completed']
-            confidence = float(response['confidence'])  # Ensure conversion to float
+            confidence = float(response['confidence'])
             analysis = response['analysis']
             
-            # Validate confidence range
+            # 验证confidence范围
             if not (0.0 <= confidence <= 1.0):
                 print(f"⚠️ Confidence out of range: {confidence}, clamping to [0.0, 1.0]")
                 confidence = max(0.0, min(1.0, confidence))
             
-            print(f"\n🎯 Task Completed: {'Yes' if is_completed else 'No'}")
-            print(f"🎯 Confidence: {confidence:.2%}")
-            print(f"🎯 Analysis: {analysis[:150]}...")
-            
-            if not is_completed and 'recommendation' in response and response['recommendation']:
-                print(f"🎯 Recommendation: {response['recommendation'][:150]}...")
-            
-            return is_completed, confidence, analysis
+            return response, is_completed, confidence, analysis
             
         except (KeyError, ValueError, TypeError) as e:
             print(f"✗ Field parsing error: {e}")
             print(f"✗ Actual fields received: {list(response.keys()) if response else 'None'}")
-            return False, 0.0, f"Field parsing error: {e}"
+            return response, False, 0.0, f"Field parsing error: {e}"
         except Exception as e:
             print(f"✗ Task check failed: {e}")
-            return False, 0.0, f"Processing exception: {e}"
+            return response, False, 0.0, f"Processing exception: {e}"
