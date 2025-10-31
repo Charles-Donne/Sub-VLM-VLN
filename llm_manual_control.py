@@ -100,10 +100,14 @@ class LLMAssistedController:
         subtask_name = "initial_subtask"
         self._create_subtask_file(subtask_name, response, subtask)
         
-        # 打印关键信息
-        print(f"\n✅ Initial Subtask Generated")
-        print(f"📋 Destination: {subtask.destination}")
+        # 打印生成结果
+        print(f"\n✅ ===== Initial Subtask Generated =====")
+        print(f"📍 Current Location: {subtask.destination}")
+        print(f"🎯 Destination: {subtask.destination}")
         print(f"📋 Instruction: {subtask.instruction}")
+        print(f"💡 Planning Hints: {subtask.planning_hints}")
+        print(f"✓ Completion Criteria: {subtask.completion_criteria}")
+        print(f"✅ ======================================\n")
         
         return subtask
     
@@ -132,6 +136,9 @@ class LLMAssistedController:
         print("🤖 Verification + Replanning")
         print(f"{'*'*80}")
         
+        # 先增加子任务计数
+        self.subtask_count += 1
+        
         # 收集观察
         phase = f"verify_replan_{self.subtask_count}"
         image_paths, direction_names = self.observe_environment(observations, phase)
@@ -146,27 +153,37 @@ class LLMAssistedController:
         
         if not response:
             print("✗ LLM call failed")
+            self.subtask_count -= 1  # 失败时回退
             return False, None
         
-        # 打印结果
+        # 无论成功与否，都保存为新子任务
+        subtask_name = f"subtask_{self.subtask_count}"
+        
         if is_completed and next_subtask:
-            print(f"\n✅ Subtask Completed - Next Subtask Generated")
-            print(f"📋 New Destination: {next_subtask.destination}")
-            print(f"📋 New Instruction: {next_subtask.instruction}")
-            
-            # 保存新子任务
+            # 子任务完成，保存新子任务
             self.current_subtask = next_subtask
-            self.subtask_count += 1
-            subtask_name = f"subtask_{self.subtask_count}"
             self._create_subtask_file(subtask_name, response, next_subtask)
             
-        elif not is_completed and next_subtask:
-            print(f"\n🔄 Subtask Not Completed - Instruction Refined")
-            print(f"📋 Refined Instruction: {next_subtask.instruction}")
+            print(f"\n✅ ===== Subtask #{self.subtask_count-1} COMPLETED =====")
+            print(f"📍 Current Location: {self.current_subtask.destination}")
+            print(f"🎯 Next Destination: {next_subtask.destination}")
+            print(f"📋 Instruction: {next_subtask.instruction}")
+            print(f"💡 Planning Hints: {next_subtask.planning_hints}")
+            print(f"✓ Completion Criteria: {next_subtask.completion_criteria}")
+            print(f"✅ =============================================\n")
             
-            # 更新当前子任务
+        elif not is_completed and next_subtask:
+            # 子任务未完成，保存refined子任务
             self.current_subtask = next_subtask
-            self._update_subtask_file(response, next_subtask)
+            self._create_subtask_file(subtask_name, response, next_subtask)
+            
+            print(f"\n🔄 ===== Subtask #{self.subtask_count-1} NOT COMPLETED =====")
+            print(f"📍 Current Location: {self.current_subtask.destination}")
+            print(f"🎯 Target Destination: {next_subtask.destination}")
+            print(f"📋 Refined Instruction: {next_subtask.instruction}")
+            print(f"💡 Planning Hints: {next_subtask.planning_hints}")
+            print(f"✓ Completion Criteria: {next_subtask.completion_criteria}")
+            print(f"🔄 =============================================\n")
         
         return is_completed, next_subtask
     
@@ -215,15 +232,18 @@ class LLMAssistedController:
             return
         
         print(f"\n{'='*60}")
-        print(f"📋 Current Subtask #{self.subtask_count}")
-        print(f"Destination: {self.current_subtask.destination}")
-        print(f"Instruction: {self.current_subtask.instruction}")
+        print(f"📋 Subtask #{self.subtask_count}")
+        print(f"📍 Current: {self.current_subtask.destination}")
+        print(f"📋 Instruction: {self.current_subtask.instruction}")
+        print(f"💡 Hints: {self.current_subtask.planning_hints}")
+        print(f"✓ Criteria: {self.current_subtask.completion_criteria}")
         print(f"{'='*60}\n")
 
 
 def run_llm_assisted_control(config_path: str, 
                              output_dir: str = "./llm_control_output",
-                             llm_config_path: str = "llm_config.yaml"):
+                             llm_config_path: str = "llm_config.yaml",
+                             episode_index: int = 0):
     """运行LLM辅助导航控制"""
     print("="*60)
     print("LLM-Assisted Navigation Control")
@@ -259,7 +279,10 @@ def run_llm_assisted_control(config_path: str,
     }
     
     # 选择episode
-    episode_index = 0
+    if episode_index < 0 or episode_index >= len(env.episodes):
+        print(f"✗ Invalid episode index: {episode_index} (available: 0-{len(env.episodes)-1})")
+        return
+    
     env._current_episode = env.episodes[episode_index]
     observations = env.reset()
     
@@ -270,7 +293,8 @@ def run_llm_assisted_control(config_path: str,
     controller.reset(episode_id, instruction)
     
     print(f"\n{'='*60}")
-    print(f"Episode: {episode_id}")
+    print(f"Episode Index: {episode_index} / {len(env.episodes)-1}")
+    print(f"Episode ID: {episode_id}")
     print(f"Instruction: {instruction}")
     print(f"Initial Distance: {env.get_metrics()['distance_to_goal']:.2f}m")
     print(f"{'='*60}")
@@ -281,7 +305,6 @@ def run_llm_assisted_control(config_path: str,
         print("✗ Failed to generate initial subtask")
         return
     
-    controller.display_current_subtask()
     input("\n[Press Enter to start...]")
     
     # 主循环
@@ -292,11 +315,19 @@ def run_llm_assisted_control(config_path: str,
         print(f"Step {controller.step_count} | Distance: {info['distance_to_goal']:.2f}m")
         print(f"{'-'*60}")
         
-        controller.display_current_subtask()
+        # 先保存当前观察（在用户选择动作之前）
+        current_phase = "initial" if controller.subtask_count == 1 else f"verify_replan_{controller.subtask_count}"
+        controller.save_first_person_view(observations, current_phase)
         
         # 动作选项
-        print("Actions: 0=STOP 1=FORWARD 2=LEFT 3=RIGHT | c=Verify | q=Quit")
-        user_input = input("Enter: ").strip().lower()
+        print("\nAvailable Actions:")
+        print(f"  0 = STOP")
+        print(f"  1 = MOVE_FORWARD ({forward_step}m)")
+        print(f"  2 = TURN_LEFT ({turn_angle}°)")
+        print(f"  3 = TURN_RIGHT ({turn_angle}°)")
+        print(f"  c = Verify & Replan")
+        print(f"  q = Quit")
+        user_input = input("\nEnter action: ").strip().lower()
         
         if user_input == "exit":
             return
@@ -309,10 +340,6 @@ def run_llm_assisted_control(config_path: str,
         # 验证+再规划
         if user_input == "c":
             is_completed, next_subtask = controller.verify_and_replan(observations)
-            
-            if is_completed and next_subtask:
-                controller.display_current_subtask()
-            
             input("\n[Press Enter to continue...]")
             continue
         
@@ -322,10 +349,6 @@ def run_llm_assisted_control(config_path: str,
             continue
         
         action_name, action_id = action_dict[user_input]
-        
-        # 保存执行动作前的第一人称视角
-        current_phase = "initial" if controller.subtask_count == 1 else f"verify_replan_{controller.subtask_count}"
-        controller.save_first_person_view(observations, current_phase)
         
         # 记录动作
         controller.record_action(action_name, action_id, info)
@@ -352,10 +375,12 @@ if __name__ == "__main__":
     default_habitat_config = "VLN_CE/vlnce_baselines/config/r2r_baselines/navid_r2r.yaml"
     default_output_dir = "/root/autodl-tmp/manual-habitat"
     default_llm_config = "Sub_vlm/llm_config.yaml"
+    default_episode_index = 0
     
     # 解析参数
     habitat_config = sys.argv[1] if len(sys.argv) > 1 else default_habitat_config
     output_dir = sys.argv[2] if len(sys.argv) > 2 else default_output_dir
     llm_config = sys.argv[3] if len(sys.argv) > 3 else default_llm_config
+    episode_index = int(sys.argv[4]) if len(sys.argv) > 4 else default_episode_index
     
-    run_llm_assisted_control(habitat_config, output_dir, llm_config)
+    run_llm_assisted_control(habitat_config, output_dir, llm_config, episode_index)
