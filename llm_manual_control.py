@@ -348,12 +348,14 @@ def run_llm_assisted_control(config_path: str,
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python llm_manual_control.py <habitat_config> [output_dir] [llm_config]")
-        print("Example: python llm_manual_control.py config.yaml ./output llm_config.yaml")
-    else:
-        habitat_config = sys.argv[1] if len(sys.argv) > 1 else "VLN_CE/habitat_extensions/config/vlnce_task.yaml"
-        output_dir = sys.argv[2] if len(sys.argv) > 2 else "/root/autodl-tmp/manual-habitat"  # 改为 ./output
-        llm_config = sys.argv[3] if len(sys.argv) > 3 else "Sub_vlm/llm_config.yaml"  # 去掉开头的 ./
-        
-        run_llm_assisted_control(habitat_config, output_dir, llm_config)
+    # 默认值
+    default_habitat_config = "VLN_CE/habitat_extensions/config/vlnce_task.yaml"
+    default_output_dir = "/root/autodl-tmp/manual-habitat"
+    default_llm_config = "Sub_vlm/llm_config.yaml"
+    
+    # 解析参数
+    habitat_config = sys.argv[1] if len(sys.argv) > 1 else default_habitat_config
+    output_dir = sys.argv[2] if len(sys.argv) > 2 else default_output_dir
+    llm_config = sys.argv[3] if len(sys.argv) > 3 else default_llm_config
+    
+    run_llm_assisted_control(habitat_config, output_dir, llm_config)
