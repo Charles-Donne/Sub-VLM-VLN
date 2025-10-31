@@ -349,7 +349,7 @@ def run_llm_assisted_control(config_path: str,
 
 if __name__ == "__main__":
     # 默认值
-    default_habitat_config = "VLN_CE/habitat_extensions/config/vlnce_task.yaml"
+    default_habitat_config = "VLN_CE/vlnce_baselines/config/r2r_baselines/navid_r2r.yaml"
     default_output_dir = "/root/autodl-tmp/manual-habitat"
     default_llm_config = "Sub_vlm/llm_config.yaml"
     
