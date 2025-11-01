@@ -19,8 +19,15 @@ from Sub_vlm.observation_collector import ObservationCollector
 class LLMAssistedController:
     """LLM辅助控制器"""
     
-    def __init__(self, output_dir: str, llm_config_path: str = "Sub_vlm/llm_config.yaml"):
-        """初始化控制器"""
+    def __init__(self, output_dir: str, llm_config_path: str = "Sub_vlm/llm_config.yaml", action_space: str = None):
+        """
+        初始化控制器
+        
+        Args:
+            output_dir: 输出目录
+            llm_config_path: LLM配置文件路径
+            action_space: 动作空间描述
+        """
         self.output_dir = output_dir
         self.step_count = 0
         self.subtask_count = 0
@@ -28,7 +35,7 @@ class LLMAssistedController:
         self.instruction = None
         
         os.makedirs(output_dir, exist_ok=True)
-        self.planner = LLMPlanner(llm_config_path)
+        self.planner = LLMPlanner(llm_config_path, action_space)
         
         self.current_subtask = None
         self.current_subtask_file = None
@@ -265,11 +272,15 @@ def run_llm_assisted_control(config_path: str,
         return
     
     # 初始化控制器
-    controller = LLMAssistedController(output_dir, llm_config_path)
-    
-    # 动作参数
     forward_step = config.TASK_CONFIG.SIMULATOR.FORWARD_STEP_SIZE
     turn_angle = config.TASK_CONFIG.SIMULATOR.TURN_ANGLE
+    
+    # 构建动作空间描述
+    action_space = f"MOVE_FORWARD ({forward_step}m), TURN_LEFT ({turn_angle}°), TURN_RIGHT ({turn_angle}°), STOP"
+    
+    controller = LLMAssistedController(output_dir, llm_config_path, action_space)
+    
+    # 动作参数
     
     action_dict = {
         "0": (f"STOP", 0),
@@ -377,10 +388,10 @@ if __name__ == "__main__":
     default_llm_config = "Sub_vlm/llm_config.yaml"
     default_episode_index = 0
     
-    # 解析参数
-    habitat_config = sys.argv[1] if len(sys.argv) > 1 else default_habitat_config
-    output_dir = sys.argv[2] if len(sys.argv) > 2 else default_output_dir
-    llm_config = sys.argv[3] if len(sys.argv) > 3 else default_llm_config
-    episode_index = int(sys.argv[4]) if len(sys.argv) > 4 else default_episode_index
+    # 解析参数 - episode_index 放在第一位
+    episode_index = int(sys.argv[1]) if len(sys.argv) > 1 else default_episode_index
+    habitat_config = sys.argv[2] if len(sys.argv) > 2 else default_habitat_config
+    output_dir = sys.argv[3] if len(sys.argv) > 3 else default_output_dir
+    llm_config = sys.argv[4] if len(sys.argv) > 4 else default_llm_config
     
     run_llm_assisted_control(habitat_config, output_dir, llm_config, episode_index)

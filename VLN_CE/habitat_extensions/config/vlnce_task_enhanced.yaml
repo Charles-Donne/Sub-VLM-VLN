@@ -21,7 +21,7 @@ SIMULATOR:
   
   # 动作参数（可调整）
   FORWARD_STEP_SIZE: 0.25   # 前进步长（米）
-  TURN_ANGLE: 30            # 转向角度（度）
+  TURN_ANGLE: 45            # 转向角度（度）
   
   HABITAT_SIM_V0:
     GPU_DEVICE_ID: 0

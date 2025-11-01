@@ -70,10 +70,18 @@ class SubTask:
 class LLMPlanner:
     """LLM规划器 - 负责子任务生成和验证"""
     
-    def __init__(self, config_path="llm_config.yaml"):
-        """初始化规划器"""
+    def __init__(self, config_path="llm_config.yaml", action_space: str = None):
+        """
+        初始化规划器
+        
+        Args:
+            config_path: LLM配置文件路径
+            action_space: 动作空间描述,如 "MOVE_FORWARD (0.25m), TURN_LEFT (45°), TURN_RIGHT (45°), STOP"
+        """
         self.config = LLMConfig(config_path)
+        self.action_space = action_space or "MOVE_FORWARD, TURN_LEFT, TURN_RIGHT, STOP"
         print(f"✓ LLM Planner initialized: {self.config}")
+        print(f"✓ Action space: {self.action_space}")
     
     def encode_image_base64(self, image_path: str) -> str:
         """编码图像为base64"""
@@ -82,7 +90,7 @@ class LLMPlanner:
     
     def _build_initial_planning_prompt(self, instruction: str, direction_names: List[str]) -> str:
         """构建初始规划prompt"""
-        return get_initial_planning_prompt(instruction, direction_names)
+        return get_initial_planning_prompt(instruction, direction_names, self.action_space)
     
     def _build_verification_replanning_prompt(self, instruction: str, subtask: SubTask, direction_names: List[str]) -> str:
         """构建验证+再规划prompt"""
@@ -91,7 +99,8 @@ class LLMPlanner:
             subtask.destination,
             subtask.instruction,
             subtask.completion_criteria,
-            direction_names
+            direction_names,
+            self.action_space
         )
     
     def _build_task_completion_prompt(self, instruction: str, direction_names: List[str]) -> str:

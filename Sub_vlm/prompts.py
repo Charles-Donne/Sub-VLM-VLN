@@ -82,7 +82,7 @@ Analyze the 8-directional observations to understand the spatial environment, th
 }}
 
 # Key Rules
-- **Actions**: MOVE_FORWARD (0.25m/step), TURN_LEFT/RIGHT (45°/step), STOP
+- **Available Actions**: {action_space}
 - **Guidance style**: Use high-level directions (e.g., "move along the wall", "go around the table", "turn at the door") instead of precise step counts
 - **IMAGE references**: Use in reasoning only (e.g., "IMAGE 1 shows..."), NOT in other fields
 - **Concise output**: Keep descriptions focused on key spatial relationships, avoid redundant details
@@ -187,7 +187,7 @@ Analyze current observations and determine if the subtask is completed based on 
 }}
 
 # Key Rules
-- **Actions**: MOVE_FORWARD (0.25m/step), TURN_LEFT/RIGHT (45°/step), STOP
+- **Available Actions**: {action_space}
 - **Guidance style**: Use high-level directions (e.g., "move along the wall", "go around the table", "turn at the door") instead of precise step counts
 - **IMAGE references**: Use in reasoning only, NOT in other fields
 - **Completion logic**: is_completed=true only if ALL criteria satisfied
@@ -235,20 +235,22 @@ Compare current observations with the goal's target location → determine compl
 """
 
 
-def get_initial_planning_prompt(instruction: str, direction_names: list) -> str:
+def get_initial_planning_prompt(instruction: str, direction_names: list, action_space: str) -> str:
     """
     Get initial planning prompt
     
     Args:
         instruction: Complete navigation instruction
         direction_names: List of direction names
+        action_space: Action space description (e.g., "MOVE_FORWARD (0.25m), TURN_LEFT (45°), TURN_RIGHT (45°), STOP")
         
     Returns:
         Formatted prompt string
     """
     return INITIAL_PLANNING_PROMPT.format(
         instruction=instruction,
-        direction_names=', '.join(direction_names)
+        direction_names=', '.join(direction_names),
+        action_space=action_space
     )
 
 
@@ -256,7 +258,8 @@ def get_verification_replanning_prompt(instruction: str,
                                       subtask_destination: str,
                                       subtask_instruction: str,
                                       completion_criteria: str,
-                                      direction_names: list) -> str:
+                                      direction_names: list,
+                                      action_space: str) -> str:
     """
     Get verification and replanning prompt
     
@@ -266,6 +269,7 @@ def get_verification_replanning_prompt(instruction: str,
         subtask_instruction: Current subtask instruction
         completion_criteria: Completion criteria
         direction_names: List of direction names
+        action_space: Action space description
         
     Returns:
         Formatted prompt string
@@ -275,7 +279,8 @@ def get_verification_replanning_prompt(instruction: str,
         subtask_destination=subtask_destination,
         subtask_instruction=subtask_instruction,
         completion_criteria=completion_criteria,
-        direction_names=', '.join(direction_names)
+        direction_names=', '.join(direction_names),
+        action_space=action_space
     )
 
 
