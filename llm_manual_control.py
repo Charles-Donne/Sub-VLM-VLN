@@ -7,7 +7,7 @@ import sys
 import json
 import cv2
 from typing import Dict, List, Tuple, Optional
-from habitat import Env
+from habitat import Env, make_dataset
 from habitat.utils.visualizations import maps
 
 from VLN_CE.vlnce_baselines.config.default import get_config
@@ -289,10 +289,29 @@ def run_llm_assisted_control(config_path: str,
     if "TOP_DOWN_MAP_VLNCE" not in config.TASK_CONFIG.TASK.MEASUREMENTS:
         config.TASK_CONFIG.TASK.MEASUREMENTS.append("TOP_DOWN_MAP_VLNCE")
     
-    # 初始化环境
+    # 加载数据集
+    print("Loading dataset...")
+    dataset = make_dataset(
+        id_dataset=config.TASK_CONFIG.DATASET.TYPE,
+        config=config.TASK_CONFIG.DATASET
+    )
+    print(f"✓ Dataset loaded ({len(dataset.episodes)} episodes)")
+    
+    # 选择episode
+    if episode_index < 0 or episode_index >= len(dataset.episodes):
+        print(f"✗ Invalid episode index: {episode_index} (available: 0-{len(dataset.episodes)-1})")
+        return
+    
+    # 只保留选定的episode
+    selected_episode = dataset.episodes[episode_index]
+    dataset.episodes = [selected_episode]
+    
+    print(f"Selected Episode {episode_index}: ID={selected_episode.episode_id}")
+    
+    # 初始化环境（使用筛选后的dataset）
     try:
-        env = Env(config.TASK_CONFIG)
-        print(f"✓ Environment initialized ({len(env.episodes)} episodes)")
+        env = Env(config.TASK_CONFIG, dataset)
+        print(f"✓ Environment initialized")
     except Exception as e:
         print(f"✗ Initialization failed: {e}")
         return
@@ -315,21 +334,10 @@ def run_llm_assisted_control(config_path: str,
         "3": (f"TURN_RIGHT ({turn_angle}°)", 3)
     }
     
-    # 选择episode
-    if episode_index < 0 or episode_index >= len(env.episodes):
-        print(f"✗ Invalid episode index: {episode_index} (available: 0-{len(env.episodes)-1})")
-        return
-    
-    # 先reset环境以初始化
+    # 重置环境获取初始观察
     observations = env.reset()
     
-    # 然后设置要使用的episode
-    env._current_episode = env.episodes[episode_index]
-    
-    # 再次reset以使用指定的episode
-    observations = env.reset()
-    
-    # 确认episode设置成功
+    # 获取episode信息
     episode_id = env.current_episode.episode_id
     instruction = observations["instruction"]["text"]
     
@@ -337,7 +345,7 @@ def run_llm_assisted_control(config_path: str,
     controller.reset(episode_id, instruction)
     
     print(f"\n{'='*60}")
-    print(f"Episode Index: {episode_index} / {len(env.episodes)-1}")
+    print(f"Episode Index: {episode_index}")
     print(f"Episode ID: {episode_id}")
     print(f"Instruction: {instruction}")
     print(f"Initial Distance: {env.get_metrics()['distance_to_goal']:.2f}m")
@@ -415,11 +423,17 @@ def run_llm_assisted_control(config_path: str,
     print(f"Success: {final_metrics['success']} | SPL: {final_metrics['spl']:.4f}")
     print(f"Output: {controller.episode_dir}")
     
-    # 生成视频
+    # 生成视频或GIF
     if controller.map_collector:
         video_path = controller.map_collector.save_video()
         if video_path:
             print(f"Video: {video_path}")
+        else:
+            # 如果视频生成失败，尝试GIF
+            print("Trying GIF as fallback...")
+            gif_path = controller.map_collector.save_gif()
+            if gif_path:
+                print(f"GIF: {gif_path}")
     
     print(f"{'='*60}")
 
