@@ -56,6 +56,10 @@ class LLMAssistedController:
         
         os.makedirs(self.observations_dir, exist_ok=True)
         os.makedirs(self.subtasks_dir, exist_ok=True)
+        
+        # 创建地图可视化收集器
+        self.map_collector = ObservationCollector(self.observations_dir)
+        self.map_collector.setup_maps_dir(self.episode_dir)
     
     def observe_environment(self, observations: Dict, phase: str) -> Tuple[List[str], List[str]]:
         """收集8方向图像"""
@@ -78,6 +82,24 @@ class LLMAssistedController:
             filename = f"step{self.step_count}_first_person.jpg"
             filepath = os.path.join(obs_dir, filename)
             cv2.imwrite(filepath, cv2.cvtColor(observations["rgb"], cv2.COLOR_RGB2BGR))
+    
+    def save_step_with_map(self, observations: Dict, info: Dict):
+        """保存包含地图的可视化"""
+        if not self.map_collector:
+            return
+        
+        current_subtask_text = None
+        if self.current_subtask:
+            current_subtask_text = self.current_subtask.instruction
+        
+        self.map_collector.save_step_visualization(
+            observations=observations,
+            info=info,
+            step=self.step_count,
+            instruction=self.instruction,
+            current_subtask=current_subtask_text,
+            distance=info.get("distance_to_goal", 0.0)
+        )
     
     def generate_initial_subtask(self, observations: Dict) -> SubTask:
         """生成初始子任务"""
@@ -263,6 +285,10 @@ def run_llm_assisted_control(config_path: str,
     
     config = get_config(config_path)
     
+    # 启用地图测量
+    if "TOP_DOWN_MAP_VLNCE" not in config.TASK_CONFIG.TASK.MEASUREMENTS:
+        config.TASK_CONFIG.TASK.MEASUREMENTS.append("TOP_DOWN_MAP_VLNCE")
+    
     # 初始化环境
     try:
         env = Env(config.TASK_CONFIG)
@@ -307,13 +333,6 @@ def run_llm_assisted_control(config_path: str,
     episode_id = env.current_episode.episode_id
     instruction = observations["instruction"]["text"]
     
-    # 验证episode是否正确
-    expected_id = env.episodes[episode_index].episode_id
-    if episode_id != expected_id:
-        print(f"⚠️ Warning: Episode mismatch! Expected ID: {expected_id}, Got: {episode_id}")
-    else:
-        print(f"✓ Episode set successfully")
-    
     # 重置控制器
     controller.reset(episode_id, instruction)
     
@@ -340,9 +359,12 @@ def run_llm_assisted_control(config_path: str,
         print(f"Step {controller.step_count} | Distance: {info['distance_to_goal']:.2f}m")
         print(f"{'-'*60}")
         
-        # 先保存当前观察（在用户选择动作之前）
+        # 保存当前观察（在用户选择动作之前）
         current_phase = "initial" if controller.subtask_count == 1 else f"verify_replan_{controller.subtask_count}"
         controller.save_first_person_view(observations, current_phase)
+        
+        # 保存地图可视化
+        controller.save_step_with_map(observations, info)
         
         # 动作选项
         print("\nAvailable Actions:")
@@ -392,6 +414,13 @@ def run_llm_assisted_control(config_path: str,
     print(f"Steps: {controller.step_count} | Subtasks: {controller.subtask_count}")
     print(f"Success: {final_metrics['success']} | SPL: {final_metrics['spl']:.4f}")
     print(f"Output: {controller.episode_dir}")
+    
+    # 生成视频
+    if controller.map_collector:
+        video_path = controller.map_collector.save_video()
+        if video_path:
+            print(f"Video: {video_path}")
+    
     print(f"{'='*60}")
 
 

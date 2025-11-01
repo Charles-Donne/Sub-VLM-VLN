@@ -5,11 +5,12 @@
 import os
 import cv2
 import numpy as np
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
+from habitat.utils.visualizations import maps
 
 
 class ObservationCollector:
-    """观察收集器 - 负责8方向图像采集"""
+    """观察收集器 - 负责8方向图像采集和可视化"""
     
     # 8个方向的名称（从前方开始顺时针）
     DIRECTION_NAMES = [
@@ -43,6 +44,8 @@ class ObservationCollector:
             output_dir: 输出目录
         """
         self.output_dir = output_dir
+        self.maps_dir = None
+        self.video_frames = []
         os.makedirs(output_dir, exist_ok=True)
     
     def collect_8_directions(self, 
@@ -63,153 +66,179 @@ class ObservationCollector:
         
         for i, (key, direction_name) in enumerate(zip(self.OBSERVATION_KEYS, self.DIRECTION_NAMES)):
             if key in observations:
-                # 获取图像
                 img = observations[key]
-                
-                # 保存路径
                 filename = f"{save_prefix}_dir{i}_{key}.jpg"
                 filepath = os.path.join(self.output_dir, filename)
-                
-                # 保存图像
                 cv2.imwrite(filepath, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-                
                 image_paths.append(filepath)
                 collected_directions.append(direction_name)
         
-        print(f"✓ 收集了 {len(image_paths)} 个方向的观察图像")
-        
         return image_paths, collected_directions
     
-    def create_compass_visualization(self,
-                                     observations: Dict,
-                                     save_path: str = None) -> np.ndarray:
+    def setup_maps_dir(self, episode_dir: str):
+        """设置地图可视化目录"""
+        self.maps_dir = os.path.join(episode_dir, "maps")
+        os.makedirs(self.maps_dir, exist_ok=True)
+        self.video_frames = []
+    
+    def save_step_visualization(self,
+                               observations: Dict,
+                               info: Dict,
+                               step: int,
+                               instruction: str,
+                               current_subtask: str = None,
+                               distance: float = 0.0) -> str:
         """
-        创建罗盘式可视化（8方向环绕布局）
+        保存单步可视化：左边第一人称视角 + 右边地图 + 底部文本信息
         
         Args:
-            observations: 环境观测字典
-            save_path: 保存路径（可选）
+            observations: 环境观测
+            info: 环境指标
+            step: 步数
+            instruction: 全局指令
+            current_subtask: 当前子任务指令
+            distance: 到目标距离
             
         Returns:
-            可视化图像
+            保存的图像路径
         """
-        # 检查是否有足够的观察
-        available_views = [key for key in self.OBSERVATION_KEYS if key in observations]
-        
-        if len(available_views) < 2:
-            print("⚠️  观察视角不足，无法创建罗盘可视化")
+        if not self.maps_dir or "rgb" not in observations:
             return None
         
-        # 获取图像尺寸
-        sample_img = observations[available_views[0]]
-        h, w = sample_img.shape[:2]
+        # 获取第一人称RGB
+        rgb = observations["rgb"]
         
-        # 创建3x3网格（中心放置罗盘图标或地图）
-        # 布局：
-        # ┌────────┬────────┬────────┐
-        # │ 左前   │  前方  │ 右前   │
-        # ├────────┼────────┼────────┤
-        # │  左方  │ 中心   │  右方  │
-        # ├────────┼────────┼────────┤
-        # │ 左后   │  后方  │ 右后   │
-        # └────────┴────────┴────────┘
+        # 获取地图
+        if "top_down_map_vlnce" in info:
+            top_down_map = maps.colorize_draw_agent_and_fit_to_height(
+                info["top_down_map_vlnce"], rgb.shape[0]
+            )
+        else:
+            # 如果没有地图，创建空白占位
+            top_down_map = np.zeros_like(rgb)
         
-        # 位置映射 (row, col)
-        position_map = {
-            0: (0, 1),  # 前方 -> 第一行中间
-            1: (0, 2),  # 右前方 -> 第一行右边
-            2: (1, 2),  # 右方 -> 第二行右边
-            3: (2, 2),  # 右后方 -> 第三行右边
-            4: (2, 1),  # 后方 -> 第三行中间
-            5: (2, 0),  # 左后方 -> 第三行左边
-            6: (1, 0),  # 左方 -> 第二行左边
-            7: (0, 0)   # 左前方 -> 第一行左边
-        }
+        # 拼接：左边RGB + 右边地图
+        combined = np.concatenate((rgb, top_down_map), axis=1)
         
-        # 创建网格
-        grid = [[None for _ in range(3)] for _ in range(3)]
-        
-        # 填充观察图像
-        for i, key in enumerate(self.OBSERVATION_KEYS):
-            if key in observations:
-                row, col = position_map[i]
-                grid[row][col] = observations[key]
-        
-        # 创建中心图像（罗盘或文字）
-        center_img = np.zeros((h, w, 3), dtype=np.uint8)
-        center_img.fill(50)  # 深灰色背景
-        
-        # 绘制罗盘方向
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        cv2.putText(center_img, "N", (w//2 - 15, 40), font, 1.2, (255, 255, 255), 2)
-        cv2.putText(center_img, "S", (w//2 - 15, h - 20), font, 1.2, (255, 255, 255), 2)
-        cv2.putText(center_img, "E", (w - 40, h//2 + 10), font, 1.2, (255, 255, 255), 2)
-        cv2.putText(center_img, "W", (20, h//2 + 10), font, 1.2, (255, 255, 255), 2)
-        
-        # 绘制圆圈
-        cv2.circle(center_img, (w//2, h//2), min(w, h)//3, (100, 100, 100), 2)
-        
-        grid[1][1] = center_img
-        
-        # 填充空位
-        for row in range(3):
-            for col in range(3):
-                if grid[row][col] is None:
-                    empty_img = np.zeros((h, w, 3), dtype=np.uint8)
-                    empty_img.fill(30)  # 更深的灰色
-                    grid[row][col] = empty_img
-        
-        # 拼接行
-        rows = []
-        for row_imgs in grid:
-            row = np.concatenate(row_imgs, axis=1)
-            rows.append(row)
-        
-        # 拼接列
-        result = np.vstack(rows)
-        
-        # 添加方向标签
-        label_positions = [
-            (w, 30),      # 前方
-            (w*2, 30),    # 右前方
-            (w*2, h + 30),  # 右方
-            (w*2, h*2 + 30),  # 右后方
-            (w, h*2 + 30),    # 后方
-            (20, h*2 + 30),   # 左后方
-            (20, h + 30),     # 左方
-            (20, 30)          # 左前方
-        ]
-        
-        for i, (x, y) in enumerate(label_positions):
-            if i < len(self.DIRECTION_NAMES):
-                # 简短标签
-                label = self.DIRECTION_NAMES[i].split()[0]
-                cv2.putText(result, label, (x + 10, y), 
-                           font, 0.6, (255, 255, 0), 2)
+        # 添加文本信息
+        combined = self._add_text_overlay(
+            combined, 
+            instruction, 
+            current_subtask, 
+            step, 
+            distance
+        )
         
         # 保存
-        if save_path:
-            cv2.imwrite(save_path, cv2.cvtColor(result, cv2.COLOR_RGB2BGR))
-            print(f"✓ 罗盘可视化已保存: {save_path}")
+        filename = f"step{step:04d}_visualization.jpg"
+        filepath = os.path.join(self.maps_dir, filename)
+        cv2.imwrite(filepath, cv2.cvtColor(combined, cv2.COLOR_RGB2BGR))
         
+        # 记录到视频帧列表
+        self.video_frames.append(combined)
+        
+        return filepath
+    
+    def _add_text_overlay(self,
+                         image: np.ndarray,
+                         instruction: str,
+                         current_subtask: Optional[str],
+                         step: int,
+                         distance: float) -> np.ndarray:
+        """在图像底部添加文本信息"""
+        img = image.copy()
+        h, w = img.shape[:2]
+        
+        # 创建文本区域
+        text_height = 120
+        text_area = np.zeros((text_height, w, 3), dtype=np.uint8)
+        text_area.fill(40)  # 深灰色背景
+        
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.5
+        thickness = 1
+        color = (255, 255, 255)
+        
+        y_offset = 25
+        
+        # 步数和距离
+        metrics_text = f"Step: {step} | Distance: {distance:.2f}m"
+        cv2.putText(text_area, metrics_text, (10, y_offset), font, font_scale, (0, 255, 255), thickness)
+        y_offset += 30
+        
+        # 全局指令
+        instruction_lines = self._wrap_text(instruction, w - 20, font, font_scale)
+        for line in instruction_lines[:2]:  # 最多2行
+            cv2.putText(text_area, line, (10, y_offset), font, font_scale, color, thickness)
+            y_offset += 25
+        
+        # 当前子任务
+        if current_subtask:
+            y_offset += 5
+            subtask_text = f"Subtask: {current_subtask}"
+            subtask_lines = self._wrap_text(subtask_text, w - 20, font, font_scale)
+            for line in subtask_lines[:1]:  # 最多1行
+                cv2.putText(text_area, line, (10, y_offset), font, font_scale, (0, 255, 0), thickness)
+        
+        # 拼接文本区域到图像底部
+        result = np.vstack([img, text_area])
         return result
     
-    def get_direction_summary(self, observations: Dict) -> str:
+    def _wrap_text(self, text: str, max_width: int, font, font_scale: float) -> List[str]:
+        """文本换行"""
+        words = text.split()
+        lines = []
+        current_line = ""
+        
+        for word in words:
+            test_line = f"{current_line} {word}".strip()
+            (text_width, _), _ = cv2.getTextSize(test_line, font, font_scale, 1)
+            
+            if text_width <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        
+        if current_line:
+            lines.append(current_line)
+        
+        return lines
+    
+    def save_video(self, output_path: str = None, fps: int = 2) -> Optional[str]:
         """
-        生成方向观察摘要（文本）
+        将所有帧保存为视频
         
         Args:
-            observations: 环境观测字典
+            output_path: 输出路径（可选，默认在maps目录下）
+            fps: 帧率
             
         Returns:
-            摘要文本
+            视频路径
         """
-        summary_lines = ["观察摘要（8个方向）:"]
+        if not self.video_frames:
+            return None
         
-        for i, (key, direction) in enumerate(zip(self.OBSERVATION_KEYS, self.DIRECTION_NAMES)):
-            if key in observations:
-                summary_lines.append(f"  [{i+1}] {direction}: 图像已采集")
-            else:
-                summary_lines.append(f"  [{i+1}] {direction}: 未采集")
+        if output_path is None and self.maps_dir:
+            output_path = os.path.join(self.maps_dir, "navigation_video.mp4")
         
-        return "\n".join(summary_lines)
+        if not output_path:
+            return None
+        
+        # 获取帧尺寸
+        h, w = self.video_frames[0].shape[:2]
+        
+        # 创建视频写入器
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        video_writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+        
+        # 写入所有帧
+        for frame in self.video_frames:
+            video_writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+        
+        video_writer.release()
+        print(f"✓ Video saved: {output_path} ({len(self.video_frames)} frames)")
+        
+        return output_path
+
