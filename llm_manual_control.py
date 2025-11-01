@@ -294,21 +294,25 @@ def run_llm_assisted_control(config_path: str,
         print(f"✗ Invalid episode index: {episode_index} (available: 0-{len(env.episodes)-1})")
         return
     
-    # 先设置要使用的episode
-    env._current_episode = env.episodes[episode_index]
-    
-    # 获取episode信息（在reset之前）
-    episode_id_before = env.current_episode.episode_id
-    print(f"🔍 Debug: Episode before reset - Index: {episode_index}, ID: {episode_id_before}")
-    
-    # 重置环境（使用已设置的episode）
+    # 先reset环境以初始化
     observations = env.reset()
     
-    # 确认reset后的episode
-    episode_id = env.current_episode.episode_id
-    print(f"🔍 Debug: Episode after reset - ID: {episode_id}")
+    # 然后设置要使用的episode
+    env._current_episode = env.episodes[episode_index]
     
+    # 再次reset以使用指定的episode
+    observations = env.reset()
+    
+    # 确认episode设置成功
+    episode_id = env.current_episode.episode_id
     instruction = observations["instruction"]["text"]
+    
+    # 验证episode是否正确
+    expected_id = env.episodes[episode_index].episode_id
+    if episode_id != expected_id:
+        print(f"⚠️ Warning: Episode mismatch! Expected ID: {expected_id}, Got: {episode_id}")
+    else:
+        print(f"✓ Episode set successfully")
     
     # 重置控制器
     controller.reset(episode_id, instruction)
