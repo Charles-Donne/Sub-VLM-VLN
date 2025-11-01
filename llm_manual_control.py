@@ -294,10 +294,20 @@ def run_llm_assisted_control(config_path: str,
         print(f"✗ Invalid episode index: {episode_index} (available: 0-{len(env.episodes)-1})")
         return
     
+    # 先设置要使用的episode
     env._current_episode = env.episodes[episode_index]
+    
+    # 获取episode信息（在reset之前）
+    episode_id_before = env.current_episode.episode_id
+    print(f"🔍 Debug: Episode before reset - Index: {episode_index}, ID: {episode_id_before}")
+    
+    # 重置环境（使用已设置的episode）
     observations = env.reset()
     
+    # 确认reset后的episode
     episode_id = env.current_episode.episode_id
+    print(f"🔍 Debug: Episode after reset - ID: {episode_id}")
+    
     instruction = observations["instruction"]["text"]
     
     # 重置控制器
