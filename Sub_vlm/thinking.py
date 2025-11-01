@@ -5,25 +5,25 @@ Responsible for subtask generation, completion verification, and navigation plan
 模块架构:
 1. 初始子任务生成模块 (generate_initial_subtask)
    - 在任务开始时分析环境,生成第一个子任务
-   - 输出: SubTask对象(目的地、描述、规划提示、完成约束条件)
+   - 输出: response字典(包含subtask_destination, subtask_instruction, planning_hints, completion_criteria)
    
 2. 验证+再规划模块 (verify_and_replan)
-   - 接收上一步的子任务目的地、指令、完成约束条件
+   - 接收上一步的子任务字典(目的地、指令、完成约束条件)
    - 验证是否完成子任务
    - 如果完成: 生成下一个子任务
    - 如果未完成: 修改当前子任务指令,保持目的地不变
-   - 输出: (is_completed, SubTask对象)
+   - 输出: (response字典, is_completed)
    
 3. 全局任务完成检查 (check_task_completion)
    - 检查整个导航任务是否完成
-   - 输出: (is_completed, confidence, analysis)
+   - 输出: (response字典, is_completed, confidence, analysis)
 
 使用流程:
-Step 1: generate_initial_subtask() -> SubTask
+Step 1: generate_initial_subtask() -> response字典
 Step 2: 执行动作...
-Step 3: verify_and_replan() -> (is_completed, SubTask)
-Step 4a: 如果completed=True -> SubTask是新的子任务,回到Step 2
-Step 4b: 如果completed=False -> SubTask是修改后的当前子任务,回到Step 2
+Step 3: verify_and_replan() -> (response字典, is_completed)
+Step 4a: 如果completed=True -> response是新的子任务,回到Step 2
+Step 4b: 如果completed=False -> response是修改后的当前子任务,回到Step 2
 """
 import json
 import requests
@@ -36,35 +36,6 @@ from Sub_vlm.prompts import (
     get_verification_replanning_prompt,
     get_task_completion_prompt
 )
-
-
-class SubTask:
-    """子任务数据结构"""
-    
-    def __init__(self, destination: str, instruction: str, planning_hints: str, completion_criteria: str):
-        """
-        Args:
-            destination: 子任务目的地(目标路径点)
-            instruction: 子任务指令
-            planning_hints: 规划提示
-            completion_criteria: 完成约束条件
-        """
-        self.destination = destination
-        self.instruction = instruction
-        self.planning_hints = planning_hints
-        self.completion_criteria = completion_criteria
-    
-    def to_dict(self):
-        """转换为字典"""
-        return {
-            "destination": self.destination,
-            "instruction": self.instruction,
-            "planning_hints": self.planning_hints,
-            "completion_criteria": self.completion_criteria
-        }
-    
-    def __repr__(self):
-        return f"SubTask(destination='{self.destination[:30]}...', instruction='{self.instruction[:50]}...')"
 
 
 class LLMPlanner:
@@ -92,13 +63,13 @@ class LLMPlanner:
         """构建初始规划prompt"""
         return get_initial_planning_prompt(instruction, direction_names, self.action_space)
     
-    def _build_verification_replanning_prompt(self, instruction: str, subtask: SubTask, direction_names: List[str]) -> str:
+    def _build_verification_replanning_prompt(self, instruction: str, current_subtask: Dict, direction_names: List[str]) -> str:
         """构建验证+再规划prompt"""
         return get_verification_replanning_prompt(
             instruction,
-            subtask.destination,
-            subtask.instruction,
-            subtask.completion_criteria,
+            current_subtask['subtask_destination'],
+            current_subtask['subtask_instruction'],
+            current_subtask['completion_criteria'],
             direction_names,
             self.action_space
         )
@@ -210,7 +181,7 @@ class LLMPlanner:
     def generate_initial_subtask(self,
                                 instruction: str,
                                 observation_images: List[str],
-                                direction_names: List[str]) -> Tuple[Optional[Dict], Optional[SubTask]]:
+                                direction_names: List[str]) -> Optional[Dict]:
         """
         生成初始子任务(任务开始时)
         
@@ -220,15 +191,13 @@ class LLMPlanner:
             direction_names: 方向名称列表
             
         Returns:
-            (response_dict, subtask)
-            - response_dict: 完整的LLM响应JSON字典
-            - subtask: SubTask对象,失败时返回None
+            response_dict: 完整的LLM响应JSON字典,失败时返回None
         """
         prompt = self._build_initial_planning_prompt(instruction, direction_names)
         response = self._call_llm_api(prompt, observation_images)
         
         if response is None:
-            return None, None
+            return None
         
         try:
             # 验证必需字段
@@ -238,27 +207,19 @@ class LLMPlanner:
             if missing_fields:
                 print(f"✗ Response missing required fields: {', '.join(missing_fields)}")
                 print(f"✗ Actual fields received: {list(response.keys())}")
-                return response, None
+                return None
             
-            # 创建SubTask对象
-            subtask = SubTask(
-                destination=response['subtask_destination'],
-                instruction=response['subtask_instruction'],
-                planning_hints=response['planning_hints'],
-                completion_criteria=response['completion_criteria']
-            )
-            
-            return response, subtask
+            return response
             
         except Exception as e:
-            print(f"✗ Subtask creation failed: {e}")
-            return response, None
+            print(f"✗ Subtask parsing failed: {e}")
+            return None
     
     def verify_and_replan(self,
                          instruction: str,
-                         current_subtask: SubTask,
+                         current_subtask: Dict,
                          observation_images: List[str],
-                         direction_names: List[str]) -> Tuple[Optional[Dict], bool, Optional[SubTask]]:
+                         direction_names: List[str]) -> Tuple[Optional[Dict], bool]:
         """
         验证+再规划模块 - 验证子任务完成并规划下一步
         
@@ -269,21 +230,20 @@ class LLMPlanner:
         
         Args:
             instruction: 完整导航指令(全局任务)
-            current_subtask: 当前子任务(包含目的地、指令、完成约束条件)
+            current_subtask: 当前子任务字典(包含目的地、指令、完成约束条件)
             observation_images: 8方向图像路径列表
             direction_names: 方向名称列表
             
         Returns:
-            (response_dict, is_completed, subtask)
-            - response_dict: 完整的LLM响应JSON字典
+            (response_dict, is_completed)
+            - response_dict: 完整的LLM响应JSON字典,失败时返回None
             - is_completed: 是否完成当前子任务
-            - subtask: 如果完成,返回新子任务; 如果未完成,返回修改后的当前子任务
         """
         prompt = self._build_verification_replanning_prompt(instruction, current_subtask, direction_names)
         response = self._call_llm_api(prompt, observation_images)
         
         if response is None:
-            return None, False, None
+            return None, False
         
         try:
             # 验证必需字段
@@ -294,24 +254,16 @@ class LLMPlanner:
             if missing_fields:
                 print(f"✗ Response missing required fields: {', '.join(missing_fields)}")
                 print(f"✗ Actual fields received: {list(response.keys())}")
-                return response, False, None
+                return None, False
             
             # 提取验证结果
             is_completed = response['is_completed']
             
-            # 创建SubTask对象(可能是新子任务或修改后的当前子任务)
-            subtask = SubTask(
-                destination=response['subtask_destination'],
-                instruction=response['subtask_instruction'],
-                planning_hints=response['planning_hints'],
-                completion_criteria=response['completion_criteria']
-            )
-            
-            return response, is_completed, subtask
+            return response, is_completed
                 
         except Exception as e:
             print(f"✗ Verification and replanning failed: {e}")
-            return response, False, None
+            return None, False
     
     def check_task_completion(self,
                              instruction: str,

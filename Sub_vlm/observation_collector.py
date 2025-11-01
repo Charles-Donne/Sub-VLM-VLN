@@ -212,75 +212,9 @@ class ObservationCollector:
         
         return lines
     
-    def save_video(self, output_path: str = None, fps: int = 2) -> Optional[str]:
-        """
-        将所有帧保存为视频
-        
-        Args:
-            output_path: 输出路径（可选，默认在maps目录下）
-            fps: 帧率
-            
-        Returns:
-            视频路径
-        """
-        if not self.video_frames:
-            print("⚠️  No frames to save")
-            return None
-        
-        if output_path is None and self.maps_dir:
-            output_path = os.path.join(self.maps_dir, "navigation_video.mp4")
-        
-        if not output_path:
-            return None
-        
-        try:
-            # 获取帧尺寸
-            h, w = self.video_frames[0].shape[:2]
-            
-            # 尝试使用更兼容的编码器
-            # 优先尝试 H264 (avc1)，如果失败则使用 mp4v
-            fourcc_list = [
-                cv2.VideoWriter_fourcc(*'avc1'),  # H.264
-                cv2.VideoWriter_fourcc(*'mp4v'),  # MPEG-4
-                cv2.VideoWriter_fourcc(*'XVID'),  # Xvid
-            ]
-            
-            video_writer = None
-            for fourcc in fourcc_list:
-                video_writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
-                if video_writer.isOpened():
-                    break
-                video_writer.release()
-                video_writer = None
-            
-            if not video_writer or not video_writer.isOpened():
-                print("✗ Failed to create video writer")
-                return None
-            
-            # 写入所有帧
-            for frame in self.video_frames:
-                # 确保帧是uint8类型
-                if frame.dtype != np.uint8:
-                    frame = frame.astype(np.uint8)
-                video_writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-            
-            video_writer.release()
-            
-            # 验证文件是否创建成功
-            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                print(f"✓ Video saved: {output_path} ({len(self.video_frames)} frames, {fps} fps)")
-                return output_path
-            else:
-                print(f"✗ Video file creation failed or empty")
-                return None
-                
-        except Exception as e:
-            print(f"✗ Error saving video: {e}")
-            return None
-    
     def save_gif(self, output_path: str = None, fps: int = 2, duration: float = None) -> Optional[str]:
         """
-        将所有帧保存为GIF动画（备用方案）
+        将所有帧保存为GIF动画
         
         Args:
             output_path: 输出路径（可选，默认在maps目录下）
@@ -305,23 +239,22 @@ class ObservationCollector:
             return None
         
         try:
-            # 转换帧为uint8 BGR格式
-            frames_bgr = []
+            # 转换帧为RGB格式
+            frames_rgb = []
             for frame in self.video_frames:
                 if frame.dtype != np.uint8:
                     frame = frame.astype(np.uint8)
-                # imageio需要RGB格式
-                frames_bgr.append(frame)
+                frames_rgb.append(frame)
             
             # 计算每帧持续时间
             if duration is None:
                 duration = 1.0 / fps
             
             # 保存GIF
-            imageio.mimsave(output_path, frames_bgr, duration=duration, loop=0)
+            imageio.mimsave(output_path, frames_rgb, duration=duration, loop=0)
             
             if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                print(f"✓ GIF saved: {output_path} ({len(self.video_frames)} frames)")
+                print(f"✓ GIF saved: {output_path} ({len(self.video_frames)} frames, {fps} fps)")
                 return output_path
             else:
                 print(f"✗ GIF file creation failed")

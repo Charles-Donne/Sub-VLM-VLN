@@ -12,7 +12,7 @@ from habitat.utils.visualizations import maps
 
 from VLN_CE.vlnce_baselines.config.default import get_config
 
-from Sub_vlm.thinking import LLMPlanner, SubTask
+from Sub_vlm.thinking import LLMPlanner
 from Sub_vlm.observation_collector import ObservationCollector
 
 
@@ -90,7 +90,7 @@ class LLMAssistedController:
         
         current_subtask_text = None
         if self.current_subtask:
-            current_subtask_text = self.current_subtask.instruction
+            current_subtask_text = self.current_subtask['subtask_instruction']
         
         self.map_collector.save_step_visualization(
             observations=observations,
@@ -101,7 +101,7 @@ class LLMAssistedController:
             distance=info.get("distance_to_goal", 0.0)
         )
     
-    def generate_initial_subtask(self, observations: Dict) -> SubTask:
+    def generate_initial_subtask(self, observations: Dict) -> Optional[Dict]:
         """生成初始子任务"""
         print(f"\n{'*'*80}")
         print("🤖 Generating Initial Subtask")
@@ -111,36 +111,36 @@ class LLMAssistedController:
         image_paths, direction_names = self.observe_environment(observations, "initial")
         
         # 调用LLM
-        response, subtask = self.planner.generate_initial_subtask(
+        response = self.planner.generate_initial_subtask(
             self.instruction,
             image_paths,
             direction_names
         )
         
-        if not response or not subtask:
+        if not response:
             print("✗ LLM call failed")
             return None
         
         # 保存子任务
-        self.current_subtask = subtask
+        self.current_subtask = response
         self.subtask_count += 1
         
         # 创建子任务文件
         subtask_name = "initial_subtask"
-        self._create_subtask_file(subtask_name, response, subtask)
+        self._create_subtask_file(subtask_name, response)
         
         # 打印生成结果
         print(f"\n✅ ===== Initial Subtask Generated =====")
-        print(f"📍 Current Location: {subtask.destination}")
-        print(f"🎯 Destination: {subtask.destination}")
-        print(f"📋 Instruction: {subtask.instruction}")
-        print(f"💡 Planning Hints: {subtask.planning_hints}")
-        print(f"✓ Completion Criteria: {subtask.completion_criteria}")
+        print(f"🌍 Global Instruction: {self.instruction}")
+        print(f"🎯 Subtask Destination: {response['subtask_destination']}")
+        print(f"📋 Subtask Instruction: {response['subtask_instruction']}")
+        print(f"💡 Planning Hints: {response['planning_hints']}")
+        print(f"✓ Completion Criteria: {response['completion_criteria']}")
         print(f"✅ ======================================\n")
         
-        return subtask
+        return response
     
-    def _create_subtask_file(self, subtask_name: str, response: Dict, subtask: SubTask):
+    def _create_subtask_file(self, subtask_name: str, response: Dict):
         """创建子任务文件"""
         subtask_data = {
             "global_instruction": self.instruction,
@@ -148,7 +148,6 @@ class LLMAssistedController:
             "subtask_name": subtask_name,
             "generated_at_step": self.step_count,
             "llm_response": response,
-            "subtask": subtask.to_dict(),
             "actions": []
         }
         
@@ -159,7 +158,7 @@ class LLMAssistedController:
         self.current_subtask_file = filepath
         print(f"💾 Subtask saved: {filepath}")
     
-    def verify_and_replan(self, observations: Dict) -> Tuple[bool, Optional[SubTask]]:
+    def verify_and_replan(self, observations: Dict) -> Tuple[bool, Optional[Dict]]:
         """验证+再规划模块"""
         print(f"\n{'*'*80}")
         print("🤖 Verification + Replanning")
@@ -173,7 +172,7 @@ class LLMAssistedController:
         image_paths, direction_names = self.observe_environment(observations, phase)
         
         # 调用LLM
-        response, is_completed, next_subtask = self.planner.verify_and_replan(
+        response, is_completed = self.planner.verify_and_replan(
             self.instruction,
             self.current_subtask,
             image_paths,
@@ -188,35 +187,35 @@ class LLMAssistedController:
         # 无论成功与否，都保存为新子任务
         subtask_name = f"subtask_{self.subtask_count}"
         
-        if is_completed and next_subtask:
+        if is_completed:
             # 子任务完成，保存新子任务
-            self.current_subtask = next_subtask
-            self._create_subtask_file(subtask_name, response, next_subtask)
+            self.current_subtask = response
+            self._create_subtask_file(subtask_name, response)
             
             print(f"\n✅ ===== Subtask #{self.subtask_count-1} COMPLETED =====")
-            print(f"📍 Current Location: {self.current_subtask.destination}")
-            print(f"🎯 Next Destination: {next_subtask.destination}")
-            print(f"📋 Instruction: {next_subtask.instruction}")
-            print(f"💡 Planning Hints: {next_subtask.planning_hints}")
-            print(f"✓ Completion Criteria: {next_subtask.completion_criteria}")
+            print(f"🌍 Global Instruction: {self.instruction}")
+            print(f"🎯 Next Subtask Destination: {response['subtask_destination']}")
+            print(f"📋 Next Subtask Instruction: {response['subtask_instruction']}")
+            print(f"💡 Planning Hints: {response['planning_hints']}")
+            print(f"✓ Completion Criteria: {response['completion_criteria']}")
             print(f"✅ =============================================\n")
             
-        elif not is_completed and next_subtask:
+        else:
             # 子任务未完成，保存refined子任务
-            self.current_subtask = next_subtask
-            self._create_subtask_file(subtask_name, response, next_subtask)
+            self.current_subtask = response
+            self._create_subtask_file(subtask_name, response)
             
             print(f"\n🔄 ===== Subtask #{self.subtask_count-1} NOT COMPLETED =====")
-            print(f"📍 Current Location: {self.current_subtask.destination}")
-            print(f"🎯 Target Destination: {next_subtask.destination}")
-            print(f"📋 Refined Instruction: {next_subtask.instruction}")
-            print(f"💡 Planning Hints: {next_subtask.planning_hints}")
-            print(f"✓ Completion Criteria: {next_subtask.completion_criteria}")
+            print(f"🌍 Global Instruction: {self.instruction}")
+            print(f"🎯 Target Destination: {response['subtask_destination']}")
+            print(f"📋 Refined Instruction: {response['subtask_instruction']}")
+            print(f"💡 Planning Hints: {response['planning_hints']}")
+            print(f"✓ Completion Criteria: {response['completion_criteria']}")
             print(f"🔄 =============================================\n")
         
-        return is_completed, next_subtask
+        return is_completed, response
     
-    def _update_subtask_file(self, response: Dict, subtask: SubTask):
+    def _update_subtask_file(self, response: Dict):
         """更新子任务文件（指令refinement）"""
         if not self.current_subtask_file or not os.path.exists(self.current_subtask_file):
             return
@@ -225,7 +224,6 @@ class LLMAssistedController:
             data = json.load(f)
         
         data["llm_response"] = response
-        data["subtask"] = subtask.to_dict()
         
         with open(self.current_subtask_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -262,10 +260,10 @@ class LLMAssistedController:
         
         print(f"\n{'='*60}")
         print(f"📋 Subtask #{self.subtask_count}")
-        print(f"📍 Current: {self.current_subtask.destination}")
-        print(f"📋 Instruction: {self.current_subtask.instruction}")
-        print(f"💡 Hints: {self.current_subtask.planning_hints}")
-        print(f"✓ Criteria: {self.current_subtask.completion_criteria}")
+        print(f"📍 Current: {self.current_subtask['subtask_destination']}")
+        print(f"📋 Instruction: {self.current_subtask['subtask_instruction']}")
+        print(f"💡 Hints: {self.current_subtask['planning_hints']}")
+        print(f"✓ Criteria: {self.current_subtask['completion_criteria']}")
         print(f"{'='*60}\n")
 
 
@@ -394,7 +392,7 @@ def run_llm_assisted_control(config_path: str,
         
         # 验证+再规划
         if user_input == "c":
-            is_completed, next_subtask = controller.verify_and_replan(observations)
+            is_completed, response = controller.verify_and_replan(observations)
             input("\n[Press Enter to continue...]")
             continue
         
@@ -423,17 +421,33 @@ def run_llm_assisted_control(config_path: str,
     print(f"Success: {final_metrics['success']} | SPL: {final_metrics['spl']:.4f}")
     print(f"Output: {controller.episode_dir}")
     
-    # 生成视频或GIF
+    # 保存结果到JSON
+    result_data = {
+        "episode_index": episode_index,
+        "episode_id": episode_id,
+        "instruction": instruction,
+        "steps": controller.step_count,
+        "subtasks": controller.subtask_count,
+        "metrics": {
+            "distance_to_goal": final_metrics.get("distance_to_goal", -1),
+            "success": final_metrics.get("success", False),
+            "spl": final_metrics.get("spl", 0.0),
+            "path_length": final_metrics.get("path_length", 0.0),
+            "oracle_success": final_metrics.get("oracle_success", False)
+        }
+    }
+    
+    result_file = os.path.join(controller.episode_dir, "result.json")
+    with open(result_file, "w", encoding="utf-8") as f:
+        json.dump(result_data, f, indent=2, ensure_ascii=False)
+    print(f"✓ Result saved: {result_file}")
+    
+    # 生成GIF
     if controller.map_collector:
-        video_path = controller.map_collector.save_video()
-        if video_path:
-            print(f"Video: {video_path}")
-        else:
-            # 如果视频生成失败，尝试GIF
-            print("Trying GIF as fallback...")
-            gif_path = controller.map_collector.save_gif()
-            if gif_path:
-                print(f"GIF: {gif_path}")
+        print("Generating navigation GIF...")
+        gif_path = controller.map_collector.save_gif()
+        if gif_path:
+            print(f"GIF: {gif_path}")
     
     print(f"{'='*60}")
 
